@@ -4,3 +4,4 @@ uploads/
 .env
 *.log
 .DS_Store
+prisma/migrations/*.sql

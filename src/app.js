@@ -1,44 +1,52 @@
-const express = require("express");
-const cors = require("cors");
-const helmet = require("helmet");
-const morgan = require("morgan");
-const path = require("path");
+import fastify from "fastify";
+import fastifyCors from "@fastify/cors";
+import fastifyHelmet from "@fastify/helmet";
+import fastifyMultipart from "@fastify/multipart";
+import authPlugin from "../plugins/auth.js";
+import userProfileRoutes from "../routes/userProfileRoutes.js";
+import guildProfileRoutes from "../routes/guildProfileRoutes.js";
+import uploadRoutes from "../routes/uploadRoutes.js";
 
-const userProfileRoutes = require("../routes/userProfileRoutes");
-const guildProfileRoutes = require("../routes/guildProfileRoutes");
-const uploadRoutes = require("../routes/uploadRoutes");
-const { authenticate } = require("../middleware/auth");
-const errorHandler = require("../middleware/errorHandler");
-
-const app = express();
-
-// Middleware de segurança
-app.use(helmet());
-app.use(cors());
-app.use(morgan("combined"));
-app.use(express.json());
-
-// Serve arquivos estáticos de upload
-app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
-
-// Health check
-app.get("/health", (req, res) => {
-  res.json({ status: "ok", service: "echo-api" });
+const app = fastify({
+  logger: process.env.NODE_ENV === "development",
 });
 
-// Rotas da API (todas requerem autenticação)
-app.use("/api", authenticate);
+// Plugins de segurança
+app.register(fastifyCors, {
+  origin: true,
+  methods: ["GET", "PATCH", "POST", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "X-API-Key"],
+});
 
-// Perfis de usuário
-app.use("/api/profiles", userProfileRoutes);
+app.register(fastifyHelmet, {
+  contentSecurityPolicy: false, // Desabilita CSP para permitir uploads simples
+});
 
-// Perfis de guilda
-app.use("/api/guilds", guildProfileRoutes);
+app.register(fastifyMultipart, {
+  limits: {
+    fields: 10,
+    fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024, // 10MB
+    files: 1,
+    headerPairs: 2000,
+  },
+});
 
-// Upload de arquivos
-app.use("/api/upload", uploadRoutes);
+// Plugin de autenticação
+app.register(authPlugin);
 
-// Middleware de erro
-app.use(errorHandler);
+// Rotas (todas sob /api, exceto /health)
+app.get("/health", async () => {
+  return { status: "ok", service: "echo-api" };
+});
 
-module.exports = app;
+app.register(userProfileRoutes, { prefix: "/api/profiles" });
+app.register(guildProfileRoutes, { prefix: "/api/guilds" });
+app.register(uploadRoutes, { prefix: "/api/upload" });
+
+// Serve arquivos estáticos de upload
+app.get("/uploads/:filename", async (request, reply) => {
+  const { filename } = request.params;
+  return reply.sendFile(filename, process.env.UPLOAD_DIR || "./src/uploads");
+});
+
+export default app;

@@ -1,20 +1,19 @@
-require("dotenv").config();
-const app = require("./app");
-const { runMigrations } = require("./config/migrate");
+import dotenv from "dotenv";
+dotenv.config();
 
-const PORT = process.env.PORT || 3001;
+import app from "./app.js";
+
+const PORT = parseInt(process.env.PORT) || 3001;
+const HOST = "0.0.0.0";
 
 async function start() {
   try {
-    // Executa migrações antes de iniciar o servidor
-    await runMigrations();
-
-    app.listen(PORT, () => {
-      console.log(`[API] Echo API rodando na porta ${PORT}`);
-      console.log(`[API] Ambiente: ${process.env.NODE_ENV || "development"}`);
-    });
+    await app.listen({ port: PORT, host: HOST });
+    console.log(`[API] Echo API rodando em http://${HOST}:${PORT}`);
+    console.log(`[API] Ambiente: ${process.env.NODE_ENV || "development"}`);
+    console.log(`[API] Documentação: http://${HOST}:${PORT}/health`);
   } catch (err) {
-    console.error("[API] Falha ao iniciar:", err);
+    app.log.error(err);
     process.exit(1);
   }
 }

@@ -1,0 +1,39 @@
+// Prisma schema — Echo API
+// Banco de dados próprio para perfis de usuário e guildas
+// Acessível via DBeaver: postgresql://echo_api:senha@IP_VPS:5432/echo_profiles
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model UserProfile {
+  id          String   @id @default(uuid()) @map("id")
+  userId      String   @unique @map("user_id") // MXID (ex: @usuario:echo.litteris.online)
+  avatarUrl   String?  @map("avatar_url")
+  bannerUrl   String?  @map("banner_url")
+  bio         String?  @map("bio")
+  links       Json     @default("[]") @map("links") // JSON array de {label, url}
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("user_profiles")
+}
+
+model GuildProfile {
+  id          String   @id @default(uuid()) @map("id")
+  guildId     String   @unique @map("guild_id") // Matrix roomId (ex: !roomid:echo.litteris.online)
+  name        String   @map("name")
+  description String?  @map("description")
+  avatarUrl   String?  @map("avatar_url") // Foto principal da guilda (ícone)
+  bannerUrl   String?  @map("banner_url") // Banner da guilda
+  createdBy   String   @map("created_by") // MXID do criador
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("guild_profiles")
+}
