@@ -1,0 +1,6 @@
+# Ignora node_modules e uploads em produção
+node_modules/
+uploads/
+.env
+*.log
+.DS_Store
