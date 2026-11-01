@@ -10,11 +10,9 @@ COPY . .
 # Gera o cliente Prisma
 RUN npx prisma generate
 
-# Executa migrações no build
-RUN npx prisma migrate deploy
-
 EXPOSE 3001
 
 ENV NODE_ENV=production
 
-CMD ["node", "src/server.js"]
+# Executa migrações no start (banco disponível) e depois inicia o servidor
+CMD sh -c "npx prisma migrate deploy && node src/server.js"

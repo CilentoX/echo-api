@@ -1,14 +1,14 @@
-# Echo API — Docker Compose (Coolify)
-# Deploys a Fastify + Prisma API + PostgreSQL para perfis de usuário e guildas.
+# Echo API - Docker Compose (Coolify)
+# Deploys a Fastify + Prisma API + PostgreSQL para perfis de usuario e guildas.
 #
 # O PostgreSQL fica exposto na porta 5432 do host para acesso externo via DBeaver.
 #
-# Variáveis de ambiente obrigatórias (definir no Coolify):
+# Variaveis de ambiente obrigatorias (definir no Coolify):
 #   DATABASE_URL          (postgresql://echo_api:senha@db:5432/echo_profiles?schema=public)
-#   API_KEY               (chave de autenticação da API)
+#   API_KEY               (chave de autenticacao da API)
 #   PUBLIC_BASE_URL       (https://api.echo.litteris.online)
 #   POSTGRES_PASSWORD     (senha do postgres superuser)
-#   POSTGRES_USER         (usuário do postgres, default: postgres)
+#   POSTGRES_USER         (usuario do postgres, default: postgres)
 #   POSTGRES_DB           (nome do banco, default: echo_profiles)
 
 services:
@@ -68,11 +68,7 @@ services:
 
 volumes:
   echo_api_uploads:
-    external: true
-    name: echo_api_uploads
   echo_api_db_data:
-    external: true
-    name: echo_api_db_data
 
 networks:
   coolify:
