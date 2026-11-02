@@ -1,4 +1,5 @@
 import Fastify from 'fastify'
+import { PrismaClient } from '@prisma/client'
 import { proxyToMatrix } from './lib/matrix/proxy.js'
 import { handleSyncProxy } from './lib/matrix/syncProxy.js'
 import { registerAuthRoutes } from './routes/authRoutes.js'
@@ -9,8 +10,13 @@ import { registerMemberRoutes } from './routes/memberRoutes.js'
 import { registerChatMediaRoutes } from './routes/chatMediaRoutes.js'
 import { uploadRoutes } from './routes/uploadRoutes.js'
 import { registerRealtimeRoutes } from './routes/realtimeRoutes.js'
+import { setupPrismaClient } from './plugins/auth.js'
 
 const app = Fastify({ logger: true })
+
+// Registrar Prisma client decorator para uso no middleware authenticate
+const prisma = new PrismaClient()
+await app.register(setupPrismaClient, { client: prisma })
 
 // ── CORS ──
 // Permite chamadas do app desktop (dev: http://localhost:1420) e de outros
