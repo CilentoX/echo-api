@@ -31,8 +31,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-echo_profiles}
     networks:
       - coolify
-    ports:
-      - "3001:3001"
     volumes:
       - echo_api_uploads:/app/src/uploads
     labels:
