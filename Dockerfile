@@ -6,7 +6,7 @@ FROM base AS deps
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 COPY package.json pnpm-lock.yaml* ./
-RUN npm install -g pnpm@latest && pnpm install --ignore-scripts=false
+RUN npm install -g pnpm@latest && pnpm install --allow-scripts
 
 # Gerar cliente Prisma (precisa do OpenSSL e DATABASE_URL)
 # DATABASE_URL dummy usado durante o build - Prisma generate não precisa
