@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-ssr/
+target/
+
+# Logs
+logs/
+*.log
+
+# Editor/OS
+.idea/
+.DS_Store
+Thumbs.db
+*.bak
+
+# Environment
+.env
+.env.local
+
+# Prisma
+prisma/*.db
+
+# Uploads (local dev files)
+uploads/

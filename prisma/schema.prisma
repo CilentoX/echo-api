@@ -1,0 +1,67 @@
+/// Prisma schema for Echo API
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model UserToken {
+  userId      String @unique
+  accessToken String  // encrypted
+  refreshToken String? // encrypted
+  deviceId    String?
+  updatedAt   DateTime @updatedAt
+}
+
+model UserProfile {
+  userId    String @unique
+  nickname  String? @unique
+  avatarUrl String?
+  bannerUrl String?
+  bio       String?
+  links     Json   @default("[]")
+}
+
+model ChatMedia {
+  mediaId    String @unique
+  userId     String
+  roomId     String?
+  filePath   String
+  fileType   String // e.g., "image", "audio"
+  mimeType   String
+  fileSize   Int?
+  width      Int?
+  height     Int?
+  duration   Int?
+  synapseMxcUri String?
+  createdAt  DateTime @createdAt
+}
+
+model GuildProfile {
+  guildId    String @unique
+  matrixSpaceId String? @unique
+  topic String?
+  isPrivate Boolean @default(false)
+  maxMembers Int?
+  createdAt  DateTime @createdAt
+  updatedAt  DateTime @updatedAt
+  channels   ChannelProfile[]
+}
+
+model ChannelProfile {
+  id         String @id @default(cuid())
+  guildId    String
+  matrixRoomId String @unique
+  name       String
+  topic      String?
+  type       String @default("text")
+  category   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  guild      GuildProfile @relation(fields: [guildId], references: [guildId])
+}
