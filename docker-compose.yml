@@ -16,7 +16,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: echo-api
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://echo_api:echo_api_password@db:5432/echo_profiles?schema=public
@@ -45,7 +44,6 @@ services:
 
   db:
     image: postgres:16-alpine
-    container_name: echo-api-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
