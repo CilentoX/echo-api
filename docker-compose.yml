@@ -30,7 +30,7 @@ services:
       POSTGRES_PASSWORD: echo_api_password
       POSTGRES_DB: echo_profiles
     networks:
-      - coolify
+      - app-network
     volumes:
       - echo_api_uploads:/app/src/uploads
     labels:
@@ -52,7 +52,7 @@ services:
       POSTGRES_PASSWORD: echo_api_password
       POSTGRES_DB: echo_profiles
     networks:
-      - coolify
+      - app-network
     ports:
       - "5432:5432"  # Exposto para acesso externo via DBeaver
     volumes:
@@ -74,5 +74,4 @@ volumes:
   echo_api_db_data:
 
 networks:
-  coolify:
-    external: true
+  app-network:
