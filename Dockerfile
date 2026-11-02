@@ -2,7 +2,8 @@
 FROM node:20-alpine AS base
 
 # Instalar dependências do sistema incluindo OpenSSL para o Prisma
-RUN apk add --no-cache libc6-compat openssl
+# e postgresql-client para pg_isready/psql no entrypoint
+RUN apk add --no-cache libc6-compat openssl postgresql-client
 
 WORKDIR /app
 
@@ -44,8 +45,12 @@ COPY --from=builder /app/prisma ./prisma/
 # Criar diretório de uploads
 RUN mkdir -p src/uploads && chown -R echoapi:nodejs src/uploads
 
+# Copiar entrypoint script
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
+
 USER echoapi
 
 EXPOSE 3001
 
-CMD ["node", "dist/server.js"]
+ENTRYPOINT ["sh", "./docker-entrypoint.sh"]
