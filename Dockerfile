@@ -9,7 +9,7 @@ WORKDIR /app
 # Stage de dependências — instalar com scripts para que @prisma/engines
 # e os binários nativos do Prisma sejam baixados corretamente
 FROM base AS deps
-COPY package.json pnpm-lock.yaml* ./
+COPY package.json pnpm-lock.yaml* .npmrc ./
 RUN npm install -g pnpm@latest && pnpm install
 
 # Gerar cliente Prisma (precisa do OpenSSL e DATABASE_URL)
