@@ -9,10 +9,10 @@ WORKDIR /app
 
 # Stage de dependências — instalar com scripts para que @prisma/engines
 # e os binários nativos do Prisma sejam baixados corretamente
-# .npmrc (copiado abaixo) define allow-scripts=true + approved-builds
+# pnpm 11 requer approve-builds para permitir scripts de build do Prisma
 FROM base AS deps
 COPY package.json pnpm-lock.yaml* .npmrc ./
-RUN npm install -g pnpm@latest && pnpm install
+RUN npm install -g pnpm@latest && pnpm approve-builds @prisma/client @prisma/engines prisma && pnpm install
 
 # Gerar cliente Prisma (precisa do OpenSSL e DATABASE_URL)
 # DATABASE_URL dummy usado durante o build - Prisma generate não precisa
