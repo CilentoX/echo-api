@@ -15,7 +15,8 @@ RUN corepack enable pnpm && pnpm install --frozen-lockfile
 FROM deps AS generator
 WORKDIR /app
 COPY prisma ./prisma/
-ENV DATABASE_URL=${DATABASE_URL:-file:./dev.db}
+ARG DATABASE_URL=file:./dev.db
+ENV DATABASE_URL=$DATABASE_URL
 RUN pnpm prisma generate
 
 # Build da aplicação
