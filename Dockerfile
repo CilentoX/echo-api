@@ -6,7 +6,7 @@ FROM base AS deps
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 COPY package.json pnpm-lock.yaml* ./
-RUN corepack enable pnpm && pnpm install --frozen-lockfile
+RUN corepack enable pnpm && pnpm install
 
 # Gerar cliente Prisma (precisa do OpenSSL e DATABASE_URL)
 # DATABASE_URL dummy usado durante o build - Prisma generate não precisa
@@ -15,7 +15,7 @@ RUN corepack enable pnpm && pnpm install --frozen-lockfile
 FROM deps AS generator
 WORKDIR /app
 COPY prisma ./prisma/
-ARG DATABASE_URL=file:./dev.db
+ARG DATABASE_URL=postgresql://dummy:dummy@localhost:5432/dummy
 ENV DATABASE_URL=$DATABASE_URL
 RUN pnpm prisma generate
 
