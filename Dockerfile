@@ -2,18 +2,20 @@
 FROM node:20-alpine AS base
 
 # Instalar dependências do sistema incluindo OpenSSL para o Prisma
-FROM base AS deps
 RUN apk add --no-cache libc6-compat openssl
+
 WORKDIR /app
+
+# Stage de dependências — instalar com scripts para que @prisma/engines
+# e os binários nativos do Prisma sejam baixados corretamente
+FROM base AS deps
 COPY package.json pnpm-lock.yaml* ./
-RUN npm install -g pnpm@latest && pnpm install --ignore-scripts
+RUN npm install -g pnpm@latest && pnpm install
 
 # Gerar cliente Prisma (precisa do OpenSSL e DATABASE_URL)
 # DATABASE_URL dummy usado durante o build - Prisma generate não precisa
 # de conexão real com o banco para gerar o cliente
-# Usar file: para evitar tentativa de conexão de rede durante o build
 FROM deps AS generator
-WORKDIR /app
 COPY prisma ./prisma/
 ARG DATABASE_URL=postgresql://dummy:dummy@localhost:5432/dummy
 ENV DATABASE_URL=$DATABASE_URL
@@ -27,12 +29,7 @@ RUN pnpm build
 
 # Imagem de produção
 FROM base AS runner
-WORKDIR /app
-
 ENV NODE_ENV=production
-
-# Instalar OpenSSL na imagem de produção também
-RUN apk add --no-cache libc6-compat openssl
 
 # Criar usuário não-root
 RUN addgroup --system --gid 1001 nodejs

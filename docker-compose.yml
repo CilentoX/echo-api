@@ -24,7 +24,7 @@ services:
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL is required}
       PORT: 3001
       NODE_ENV: production
-      UPLOAD_DIR: ./src/uploads
+      UPLOAD_DIR: /app/src/uploads
       MAX_FILE_SIZE: 10485760
     networks:
       - coolify
