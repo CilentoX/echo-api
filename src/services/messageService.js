@@ -1,4 +1,4 @@
-import { getMatrixClient } from './chatMediaService.js'
+import { getMatrixClient } from '../lib/matrix/client.js'
 import { saveChatMedia } from './chatMediaService.js'
 
 /**
