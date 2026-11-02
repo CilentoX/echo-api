@@ -1,16 +1,16 @@
 # Echo API — Fastify + Prisma + Node.js 20
-FROM node:20-alpine AS base
+FROM node:20-slim AS base
 
 # Instalar dependências do sistema incluindo OpenSSL para o Prisma
 # e postgresql-client para pg_isready/psql no entrypoint
-RUN apk add --no-cache libc6-compat openssl postgresql-client
+RUN apt-get update && apt-get install -y --no-install-recommends openssl postgresql-client && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # Stage de dependências — instalar com scripts para que @prisma/engines
 # e os binários nativos do Prisma sejam baixados corretamente
 FROM base AS deps
-COPY package.json .npmrc ./
+COPY package.json pnpm-lock.yaml* .npmrc ./
 RUN npm install -g pnpm@latest && pnpm approve-builds @prisma/client @prisma/engines prisma && pnpm install
 
 # Gerar cliente Prisma (precisa do OpenSSL e DATABASE_URL)
