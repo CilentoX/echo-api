@@ -48,13 +48,13 @@ else
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${DB_USER}') THEN
       CREATE ROLE ${DB_USER} LOGIN PASSWORD '${DB_PASS}';
     END IF;
-  END \$\$;"
+  END \$\$;" || echo "AVISO: falha ao criar role '$DB_USER', continuando..."
 
   echo "=== Entrypoint: concedendo privilégios ==="
-  run_psql "GRANT ALL PRIVILEGES ON DATABASE \"${POSTGRES_DB:-echo_profiles}\" TO ${DB_USER};"
-  run_psql "GRANT ALL ON SCHEMA public TO ${DB_USER};"
+  run_psql "GRANT ALL PRIVILEGES ON DATABASE \"${POSTGRES_DB:-echo_profiles}\" TO ${DB_USER};" || echo "AVISO: falha ao conceder privilégios no banco."
+  run_psql "GRANT ALL ON SCHEMA public TO ${DB_USER};" || echo "AVISO: falha ao conceder privilégios no schema."
 
-  echo "Role '$DB_USER' garantido."
+  echo "Role '$DB_USER' processado."
 fi
 
 echo "=== Entrypoint: iniciando a aplicação ==="
