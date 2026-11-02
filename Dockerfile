@@ -6,7 +6,7 @@ FROM base AS deps
 RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 COPY package.json pnpm-lock.yaml* ./
-RUN corepack enable pnpm && pnpm install
+RUN corepack enable && corepack prepare pnpm@latest --activate && pnpm install
 
 # Gerar cliente Prisma (precisa do OpenSSL e DATABASE_URL)
 # DATABASE_URL dummy usado durante o build - Prisma generate não precisa
