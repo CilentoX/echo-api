@@ -38,7 +38,7 @@ model ChatMedia {
   height     Int?
   duration   Int?
   synapseMxcUri String?
-  createdAt  DateTime @createdAt
+  createdAt  DateTime @default(now())
 }
 
 model GuildProfile {
@@ -47,7 +47,7 @@ model GuildProfile {
   topic String?
   isPrivate Boolean @default(false)
   maxMembers Int?
-  createdAt  DateTime @createdAt
+  createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   channels   ChannelProfile[]
 }
