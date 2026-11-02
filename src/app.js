@@ -12,6 +12,23 @@ import { registerRealtimeRoutes } from './routes/realtimeRoutes.js'
 
 const app = Fastify({ logger: true })
 
+// ── CORS ──
+// Permite chamadas do app desktop (dev: http://localhost:1420) e de outros
+// clientes. Em produção, restringir a origens específicas via env CORS_ORIGIN.
+const corsOrigin = process.env.CORS_ORIGIN || '*'
+app.addHook('onResponse', (request, reply) => {
+  reply.header('Access-Control-Allow-Origin', corsOrigin)
+  reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+  reply.header(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, X-API-Key',
+  )
+  // Responder OPTIONS (preflight) com 204
+  if (request.method === 'OPTIONS') {
+    reply.code(204).send()
+  }
+})
+
 /**
  * Matrix proxy route - forwards all /matrix/* requests to Synapse
  *
