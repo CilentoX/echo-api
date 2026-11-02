@@ -1,5 +1,35 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { sendMessage, editMessage, redactMessage, reactToMessage } from '@/services/messageService.js'
+
+// Mock matrix-js-sdk so createClient returns a controllable mock
+vi.mock('matrix-js-sdk', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    createClient: vi.fn(() => ({
+      sendMessage: vi.fn().mockResolvedValue({ event_id: '$evt:test', timestamp: 123 }),
+      replaceEvent: vi.fn().mockResolvedValue({ event_id: '$evt:test', timestamp: 123 }),
+      redactEvent: vi.fn().mockResolvedValue({ event_id: '$evt:test' }),
+      sendReaction: vi.fn().mockResolvedValue({ event_id: '$evt:test', timestamp: 123 }),
+    })),
+  }
+})
+
+// Mock the client module so getMatrixClient returns our mock
+vi.mock('@/lib/matrix/client.js', () => ({
+  getMatrixClient: vi.fn((userId, accessToken, baseUrl) => ({
+    sendMessage: vi.fn().mockResolvedValue({ event_id: '$evt:test', timestamp: 123 }),
+    replaceEvent: vi.fn().mockResolvedValue({ event_id: '$evt:test', timestamp: 123 }),
+    redactEvent: vi.fn().mockResolvedValue({ event_id: '$evt:test' }),
+    sendReaction: vi.fn().mockResolvedValue({ event_id: '$evt:test', timestamp: 123 }),
+  })),
+}))
+
+import {
+  sendMessage,
+  editMessage,
+  redactMessage,
+  reactToMessage,
+} from '@/services/messageService.js'
 
 describe('messageService - function existence', () => {
   it('should have sendMessage function', () => {
@@ -20,6 +50,10 @@ describe('messageService - function existence', () => {
 })
 
 describe('messageService - sendMessage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('should return a promise', () => {
     const result = sendMessage('!room:test', {
       body: 'test',
@@ -34,31 +68,43 @@ describe('messageService - sendMessage', () => {
 })
 
 describe('messageService - editMessage', () => {
-  it('should return a promise', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('should return a promise', async () => {
     const result = editMessage('!room:test', '!event:test', {
       body: 'edited',
     })
-    expect(result).toBeInstanceOf(Promise)
+    await expect(result).resolves.toBeDefined()
   })
 })
 
 describe('messageService - redactMessage', () => {
-  it('should return a promise', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('should return a promise', async () => {
     const result = redactMessage('!room:test', '!event:test', {
       accessToken: 'test-token',
       userId: '@user:test',
     })
-    expect(result).toBeInstanceOf(Promise)
+    await expect(result).resolves.toBeDefined()
   })
 })
 
 describe('messageService - reactToMessage', () => {
-  it('should return a promise', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('should return a promise', async () => {
     const result = reactToMessage('!room:test', '!event:test', {
       key: '👍',
       accessToken: 'test-token',
       userId: '@user:test',
     })
-    expect(result).toBeInstanceOf(Promise)
+    await expect(result).resolves.toBeDefined()
   })
 })

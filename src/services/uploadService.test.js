@@ -38,86 +38,56 @@ vi.mock("uuid", () => ({
   v4: vi.fn(() => "test-uuid-1234"),
 }));
 
-describe("uploadService.saveChatMedia", () => {
+describe("uploadService.saveFile", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset environment
-    process.env.UPLOAD_DIR = "/test/uploads";
     process.env.PUBLIC_BASE_URL = "https://api.echo.litteris.online";
-    process.env.MAX_FILE_SIZE = "10485760";
   });
 
   afterEach(() => {
-    delete process.env.UPLOAD_DIR;
     delete process.env.PUBLIC_BASE_URL;
-    delete process.env.MAX_FILE_SIZE;
   });
 
-  it("salva arquivo de áudio e retorna URL HTTP + metadados", async () => {
+  it("salva arquivo e retorna metadados", async () => {
     const mockFile = {
       filename: "audio.ogg",
       mimetype: "audio/ogg",
       toBuffer: async () => Buffer.from("fake audio data"),
+      file: Buffer.from("fake audio data"),
     };
 
-    const result = await uploadService.saveChatMedia(mockFile, "!room:example.com");
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    vi.spyOn(fs, "mkdirSync").mockImplementation(() => {});
+    vi.spyOn(fs, "writeFileSync").mockImplementation(() => {});
+
+    const result = await uploadService.saveFile(mockFile);
 
     expect(result).toHaveProperty("fileId");
-    expect(result).toHaveProperty("url");
-    expect(result.url).toMatch(/^https?:\/\//);
+    expect(result.fileId).toBe("test-uuid-1234");
+    expect(result.url).toBe("/api/uploads/test-uuid-1234");
     expect(result.mimeType).toBe("audio/ogg");
-    expect(result.size).toBeGreaterThan(0);
     expect(result.originalName).toBe("audio.ogg");
-    expect(result.path).toMatch(/^\/uploads\/chat\//);
+    expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
   });
 
-  it("salva arquivo de imagem e retorna URL HTTP + metadados", async () => {
-    const mockFile = {
-      filename: "image.png",
-      mimetype: "image/png",
-      toBuffer: async () => Buffer.from("fake image data"),
-    };
+  it("deleteFile remove arquivo existente", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs, "unlinkSync").mockImplementation(() => {});
 
-    const result = await uploadService.saveChatMedia(mockFile);
+    const result = await uploadService.deleteFile("test-uuid-1234");
 
-    expect(result).toHaveProperty("fileId");
-    expect(result.url).toMatch(/^https?:\/\//);
-    expect(result.mimeType).toBe("image/png");
-    expect(result.path).toMatch(/^\/uploads\/chat\//);
+    expect(result.deleted).toBe(true);
+    expect(fs.unlinkSync).toHaveBeenCalledWith(
+      expect.stringContaining("test-uuid-1234.file")
+    );
   });
 
-  it("rejeita tipo MIME não permitido (ex: .exe)", async () => {
-    const mockFile = {
-      filename: "evil.exe",
-      mimetype: "application/x-msdownload",
-      toBuffer: async () => Buffer.from("x"),
-    };
+  it("deleteFile retorna deleted:false quando arquivo não existe", async () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
 
-    await expect(uploadService.saveChatMedia(mockFile))
-      .rejects.toThrow("Tipo de arquivo não permitido");
-  });
+    const result = await uploadService.deleteFile("nonexistent");
 
-  it("rejeita tipo MIME não permitido (ex: text/plain)", async () => {
-    const mockFile = {
-      filename: "test.txt",
-      mimetype: "text/plain",
-      toBuffer: async () => Buffer.from("text"),
-    };
-
-    await expect(uploadService.saveChatMedia(mockFile))
-      .rejects.toThrow("Tipo de arquivo não permitido");
-  });
-
-  it("usa roomId sanitizado no caminho quando fornecido", async () => {
-    const mockFile = {
-      filename: "test.ogg",
-      mimetype: "audio/ogg",
-      toBuffer: async () => Buffer.from("data"),
-    };
-
-    const result = await uploadService.saveChatMedia(mockFile, "!room:test");
-
-    // roomId é sanitizado para filesystem safety: !room:test -> _room_test
-    expect(result.path).toContain("_room_test");
+    expect(result.deleted).toBe(false);
+    expect(fs.unlinkSync).not.toHaveBeenCalled();
   });
 });

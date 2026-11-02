@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
-// Mock matrix-js-sdk client
+// Mock matrix-js-sdk client module
 vi.mock('@/lib/matrix/client.js', () => ({
-  getMatrixClient: function () { },
+  getMatrixClient: vi.fn(),
 }))
 
-import * as spaceSync from '../../../../src/lib/matrix/spaceSync.js'
+import { getMatrixClient } from '@/lib/matrix/client.js'
+import * as spaceSync from '@/lib/matrix/spaceSync.js'
 
 describe('spaceSync - Matrix Space/Room operations', () => {
   beforeEach(() => {
@@ -15,22 +16,23 @@ describe('spaceSync - Matrix Space/Room operations', () => {
   describe('createSpace', () => {
     it('should create a Matrix Space and return spaceId', async () => {
       const mockClient = {
-        createRoom: function () { return Promise.resolve('!room123:matrix') },
+        createRoom: vi.fn().mockResolvedValue('!room123:matrix'),
       }
-      spaceSync.getMatrixClient = function () { return mockClient }
+      vi.mocked(getMatrixClient).mockReturnValue(mockClient)
 
       const spaceId = await spaceSync.createSpace('token', 'Test Space', 'Test topic')
 
       expect(spaceId).toBe('!room123:matrix')
+      expect(getMatrixClient).toHaveBeenCalledWith('', 'token')
     })
   })
 
   describe('updateSpace', () => {
     it('should update Matrix Space settings', async () => {
       const mockClient = {
-        setRoomState: function () { },
+        setRoomState: vi.fn().mockResolvedValue(undefined),
       }
-      spaceSync.getMatrixClient = function () { return mockClient }
+      vi.mocked(getMatrixClient).mockReturnValue(mockClient)
 
       await spaceSync.updateSpace('token', '!space123:matrix', 'New Name', 'New topic')
 
@@ -41,10 +43,10 @@ describe('spaceSync - Matrix Space/Room operations', () => {
   describe('deleteSpace', () => {
     it('should leave and forget the Matrix Space', async () => {
       const mockClient = {
-        leaveRoom: function () { },
-        forgetRoom: function () { },
+        leaveRoom: vi.fn().mockResolvedValue(undefined),
+        forgetRoom: vi.fn().mockResolvedValue(undefined),
       }
-      spaceSync.getMatrixClient = function () { return mockClient }
+      vi.mocked(getMatrixClient).mockReturnValue(mockClient)
 
       await spaceSync.deleteSpace('token', '!space123:matrix')
 
@@ -56,9 +58,9 @@ describe('spaceSync - Matrix Space/Room operations', () => {
   describe('createRoom', () => {
     it('should create a child room within a Matrix Space', async () => {
       const mockClient = {
-        createRoom: function () { return Promise.resolve('!childroom:matrix') },
+        createRoom: vi.fn().mockResolvedValue('!childroom:matrix'),
       }
-      spaceSync.getMatrixClient = function () { return mockClient }
+      vi.mocked(getMatrixClient).mockReturnValue(mockClient)
 
       const roomId = await spaceSync.createRoom('token', '!space123:matrix', 'Child Room')
 
@@ -69,9 +71,9 @@ describe('spaceSync - Matrix Space/Room operations', () => {
   describe('updateRoom', () => {
     it('should update a child room within a Matrix Space', async () => {
       const mockClient = {
-        setRoomState: function () { },
+        setRoomState: vi.fn().mockResolvedValue(undefined),
       }
-      spaceSync.getMatrixClient = function () { return mockClient }
+      vi.mocked(getMatrixClient).mockReturnValue(mockClient)
 
       await spaceSync.updateRoom('token', '!room123:matrix', 'New Name')
 
@@ -82,10 +84,10 @@ describe('spaceSync - Matrix Space/Room operations', () => {
   describe('deleteRoom', () => {
     it('should leave and forget the Matrix Room', async () => {
       const mockClient = {
-        leaveRoom: function () { },
-        forgetRoom: function () { },
+        leaveRoom: vi.fn().mockResolvedValue(undefined),
+        forgetRoom: vi.fn().mockResolvedValue(undefined),
       }
-      spaceSync.getMatrixClient = function () { return mockClient }
+      vi.mocked(getMatrixClient).mockReturnValue(mockClient)
 
       await spaceSync.deleteRoom('token', '!room123:matrix')
 

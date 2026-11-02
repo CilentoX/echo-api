@@ -1,8 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
-// Mock the matrix client methods - must be at top
+// Mock the matrix client module - always returns a functional mock client
 vi.mock('@/lib/matrix/client.js', () => ({
-  getMatrixClient: vi.fn(),
+  getMatrixClient: vi.fn().mockResolvedValue({
+    sendTyping: vi.fn().mockResolvedValue({}),
+    sendReadReceipt: vi.fn().mockResolvedValue({}),
+    getPresence: vi.fn().mockResolvedValue({ presence: 'online' }),
+  }),
 }))
 
 // Mock the matrix-js-sdk client methods
@@ -18,41 +22,56 @@ vi.mock('matrix-js-sdk', async (importOriginal) => {
   }
 })
 
-// Mock auth plugin - must be at top
-vi.mock('@/plugins/auth.js', async (importOriginal) => {
-  const actual = await importOriginal()
-  return {
-    ...actual,
-    createTestJwt: async (payload = {}) => {
-      const { jwtVerify, SignJWT } = await import('jose')
-      const jwtSecret = 'test-secret-key-base64-minimal'
-      const secret = new TextEncoder().encode(jwtSecret)
-      const now = Math.floor(Date.now() / 1000)
-      const defaultPayload = {
-        sub: '@testuser:example.com',
-        iss: 'echo-api',
-        aud: 'echo-client',
-        iat: now,
-        exp: now + 3600,
-        ...payload,
-      }
-      return new SignJWT(defaultPayload)
-        .setProtectedHeader({ alg: 'HS256' })
-        .sign(secret)
+// Mock db.js
+vi.mock('@/db.js', () => ({
+  prisma: {
+    userToken: {
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
   },
+}))
+
+// Mock tokenStore so decrypt works
+vi.mock('@/lib/auth/tokenStore.js', () => ({
+  decrypt: vi.fn().mockReturnValue('real-access-token'),
+  encrypt: vi.fn().mockReturnValue('iv|ciphertext|tag'),
+  getEncryptionKey: vi.fn().mockReturnValue(Buffer.alloc(32)),
+}))
+
+// Mock the auth plugin - authenticate has length 2 so Fastify does NOT pass 'next'
+// When authenticate completes, Fastify continues to the route handler automatically
+vi.mock('../../src/plugins/auth.js', () => {
+  const authenticate = vi.fn((request, reply) => {
+    const authHeader = request.headers['authorization']
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      reply.code(401).send({ error: 'Unauthorized: no authentication credentials' })
+      return
+    }
+    request.user = {
+      userId: '@testuser:example.com',
+      accessToken: 'real-access-token',
+      deviceId: null,
+    }
+    // No next() call - Fastify continues automatically for 2-arg preHandlers
+  })
+  Object.defineProperty(authenticate, 'length', { value: 2 })
+  return {
+    authenticate,
+    setupPrismaClient: vi.fn(),
+    createTestJwt: async () => 'mock-jwt-token',
   }
 })
 
-vi.resetModules()
-
+import { getMatrixClient } from '@/lib/matrix/client.js'
 import Fastify from 'fastify'
-import * as auth from '@/plugins/auth.js'
 import { registerRealtimeRoutes } from '@/routes/realtimeRoutes.js'
 
 describe('realtimeRoutes', () => {
   let app
 
   beforeEach(async () => {
+    vi.clearAllMocks()
+
     app = Fastify()
     await registerRealtimeRoutes(app)
   })
@@ -73,39 +92,25 @@ describe('realtimeRoutes', () => {
     })
 
     it('should return 400 for missing typing field', async () => {
-      const jwt = await auth.createTestJwt({
-        sub: '@testuser:example.com',
-      })
-
       const response = await app.inject({
         method: 'PUT',
         url: '/api/rooms/testroom:example.com/typing',
         headers: {
-          authorization: `Bearer ${jwt}`,
+          authorization: `Bearer mock-jwt-token`,
+          'content-type': 'application/json',
         },
-        body: {},
+        body: JSON.stringify({}),
       })
 
       expect(response.statusCode).toBe(400)
     })
 
     it('should send typing indicator when authenticated', async () => {
-      const jwt = await auth.createTestJwt({
-        sub: '@testuser:example.com',
-      })
-
-      const mockClient = {
-        sendTyping: vi.fn().mockResolvedValue({}),
-      }
-      import('@/lib/matrix/client.js').then((mod) => {
-        mod.getMatrixClient.mockResolvedValue(mockClient)
-      })
-
       const response = await app.inject({
         method: 'PUT',
         url: '/api/rooms/testroom:example.com/typing',
         headers: {
-          authorization: `Bearer ${jwt}`,
+          authorization: `Bearer mock-jwt-token`,
         },
         body: { typing: true, timeout: 30000 },
       })
@@ -113,6 +118,12 @@ describe('realtimeRoutes', () => {
       expect(response.statusCode).toBe(200)
       const body = JSON.parse(response.body)
       expect(body.success).toBe(true)
+      const client = vi.mocked(getMatrixClient).mock.results[0].value
+      expect(client.sendTyping).toHaveBeenCalledWith(
+        'testroom:example.com',
+        true,
+        30000,
+      )
     })
   })
 
@@ -128,15 +139,11 @@ describe('realtimeRoutes', () => {
     })
 
     it('should return 400 for missing eventId', async () => {
-      const jwt = await auth.createTestJwt({
-        sub: '@testuser:example.com',
-      })
-
       const response = await app.inject({
         method: 'PUT',
         url: '/api/rooms/testroom:example.com/receipt',
         headers: {
-          authorization: `Bearer ${jwt}`,
+          authorization: `Bearer mock-jwt-token`,
         },
         body: { receiptType: 'm.read' },
       })
@@ -145,22 +152,11 @@ describe('realtimeRoutes', () => {
     })
 
     it('should send read receipt when authenticated', async () => {
-      const jwt = await auth.createTestJwt({
-        sub: '@testuser:example.com',
-      })
-
-      const mockClient = {
-        sendReadReceipt: vi.fn().mockResolvedValue({}),
-      }
-      import('@/lib/matrix/client.js').then((mod) => {
-        mod.getMatrixClient.mockResolvedValue(mockClient)
-      })
-
       const response = await app.inject({
         method: 'PUT',
         url: '/api/rooms/testroom:example.com/receipt',
         headers: {
-          authorization: `Bearer ${jwt}`,
+          authorization: `Bearer mock-jwt-token`,
         },
         body: { eventId: '$event1:example.com', receiptType: 'm.read' },
       })
@@ -168,6 +164,12 @@ describe('realtimeRoutes', () => {
       expect(response.statusCode).toBe(200)
       const body = JSON.parse(response.body)
       expect(body.success).toBe(true)
+      const client = vi.mocked(getMatrixClient).mock.results[0].value
+      expect(client.sendReadReceipt).toHaveBeenCalledWith(
+        'testroom:example.com',
+        '$event1:example.com',
+        'm.read',
+      )
     })
   })
 
@@ -182,28 +184,19 @@ describe('realtimeRoutes', () => {
     })
 
     it('should return presence when authenticated', async () => {
-      const jwt = await auth.createTestJwt({
-        sub: '@testuser:example.com',
-      })
-
-      const mockClient = {
-        getPresence: vi.fn().mockResolvedValue({ presence: 'online' }),
-      }
-      import('@/lib/matrix/client.js').then((mod) => {
-        mod.getMatrixClient.mockResolvedValue(mockClient)
-      })
-
       const response = await app.inject({
         method: 'GET',
         url: '/api/users/@testuser:example.com/presence',
         headers: {
-          authorization: `Bearer ${jwt}`,
+          authorization: `Bearer mock-jwt-token`,
         },
       })
 
       expect(response.statusCode).toBe(200)
       const body = JSON.parse(response.body)
       expect(body.presence).toBe('online')
+      const client = vi.mocked(getMatrixClient).mock.results[0].value
+      expect(client.getPresence).toHaveBeenCalledWith('@testuser:example.com')
     })
   })
 })

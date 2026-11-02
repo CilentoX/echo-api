@@ -5,13 +5,14 @@ import FormData from "form-data";
 // Mock uploadService
 vi.mock("../services/uploadService.js", () => ({
   uploadService: {
-    saveChatMedia: vi.fn(),
+    saveFile: vi.fn(),
+    deleteFile: vi.fn(),
   },
 }));
 
 import { uploadService } from "../services/uploadService.js";
 
-describe("POST /api/upload/chat", () => {
+describe("POST /api/upload/", () => {
   let app;
 
   beforeEach(async () => {
@@ -26,26 +27,26 @@ describe("POST /api/upload/chat", () => {
     delete process.env.API_KEY;
   });
 
-  it("faz upload de áudio e retorna URL", async () => {
+  it("faz upload de arquivo e retorna metadados", async () => {
     const mockResult = {
       fileId: "test-file-id",
-      url: "https://api.echo.litteris.online/uploads/chat/test-file-id.ogg",
-      originalName: "test.ogg",
+      url: "/api/uploads/test-file-id",
       mimeType: "audio/ogg",
       size: 1234,
+      originalName: "test.ogg",
+      path: "/app/uploads/test-file-id.file",
     };
-    uploadService.saveChatMedia.mockResolvedValue(mockResult);
+    uploadService.saveFile.mockResolvedValue(mockResult);
 
     const form = new FormData();
     form.append("file", Buffer.from("fake audio data"), {
       filename: "test.ogg",
       contentType: "audio/ogg",
     });
-    form.append("roomId", "!room:example.com");
 
     const res = await app.inject({
       method: "POST",
-      url: "/api/upload/chat",
+      url: "/api/upload/",
       headers: {
         "x-api-key": "test-api-key",
         ...form.getHeaders(),
@@ -53,56 +54,14 @@ describe("POST /api/upload/chat", () => {
       payload: form,
     });
 
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(201);
     const body = JSON.parse(res.body);
-    expect(body).toHaveProperty("url");
-    expect(body.url).toMatch(/^https?:\/\//);
+    expect(body).toHaveProperty("fileId");
+    expect(body.fileId).toBe("test-file-id");
+    expect(body.url).toBe("/api/uploads/test-file-id");
     expect(body.mimeType).toBe("audio/ogg");
-    expect(uploadService.saveChatMedia).toHaveBeenCalledWith(
-      expect.objectContaining({
-        filename: "test.ogg",
-        mimetype: "audio/ogg",
-      }),
-      "!room:example.com"
-    );
-  });
-
-  it("faz upload de imagem sem roomId", async () => {
-    const mockResult = {
-      fileId: "test-file-id-2",
-      url: "https://api.echo.litteris.online/uploads/chat/test-file-id-2.png",
-      originalName: "image.png",
-      mimeType: "image/png",
-      size: 5678,
-    };
-    uploadService.saveChatMedia.mockResolvedValue(mockResult);
-
-    const form = new FormData();
-    form.append("file", Buffer.from("fake image data"), {
-      filename: "image.png",
-      contentType: "image/png",
-    });
-
-    const res = await app.inject({
-      method: "POST",
-      url: "/api/upload/chat",
-      headers: {
-        "x-api-key": "test-api-key",
-        ...form.getHeaders(),
-      },
-      payload: form,
-    });
-
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.mimeType).toBe("image/png");
-    expect(uploadService.saveChatMedia).toHaveBeenCalledWith(
-      expect.objectContaining({
-        filename: "image.png",
-        mimetype: "image/png",
-      }),
-      undefined
-    );
+    expect(body.originalName).toBe("test.ogg");
+    expect(uploadService.saveFile).toHaveBeenCalledTimes(1);
   });
 
   it("retorna 401 sem API key", async () => {
@@ -111,7 +70,7 @@ describe("POST /api/upload/chat", () => {
 
     const res = await app.inject({
       method: "POST",
-      url: "/api/upload/chat",
+      url: "/api/upload/",
       headers: form.getHeaders(),
       payload: form,
     });
@@ -119,24 +78,34 @@ describe("POST /api/upload/chat", () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it("retorna 400 para tipo MIME não permitido", async () => {
-    uploadService.saveChatMedia.mockRejectedValue(new Error("Tipo de arquivo não permitido"));
-
-    const form = new FormData();
-    form.append("file", Buffer.from("test"), { filename: "evil.exe", contentType: "application/x-msdownload" });
+  it("DELETE /api/upload/:fileId deleta arquivo", async () => {
+    uploadService.deleteFile.mockResolvedValue({ deleted: true });
 
     const res = await app.inject({
-      method: "POST",
-      url: "/api/upload/chat",
+      method: "DELETE",
+      url: "/api/upload/test-file-id",
       headers: {
         "x-api-key": "test-api-key",
-        ...form.getHeaders(),
       },
-      payload: form,
     });
 
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
-    expect(body.error).toBe("Tipo de arquivo não permitido");
+    expect(body.deleted).toBe(true);
+    expect(uploadService.deleteFile).toHaveBeenCalledWith("test-file-id");
+  });
+
+  it("DELETE retorna 404 quando arquivo não existe", async () => {
+    uploadService.deleteFile.mockResolvedValue({ deleted: false });
+
+    const res = await app.inject({
+      method: "DELETE",
+      url: "/api/upload/nonexistent",
+      headers: {
+        "x-api-key": "test-api-key",
+      },
+    });
+
+    expect(res.statusCode).toBe(404);
   });
 });

@@ -1,6 +1,55 @@
 import { createClient } from 'matrix-js-sdk'
+import fs from 'fs'
+import path from 'path'
+import { v4 as uuidv4 } from 'uuid'
 
 const clients = new Map()
+
+/**
+ * Upload service - provides saveFile and deleteFile for upload routes.
+ */
+export const uploadService = {
+  /**
+   * Save an uploaded file to local storage and Synapse.
+   * @param {object} file - Fastify multipart file object
+   * @returns {Promise<object>} { fileId, url, mimeType, size, originalName, path }
+   */
+  async saveFile(file) {
+    const mediaId = uuidv4()
+    const uploadsDir = path.join(process.cwd(), 'uploads')
+    const filePath = path.join(uploadsDir, `${mediaId}.file`)
+
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true })
+    }
+
+    const fileContent = await file.toBuffer()
+    fs.writeFileSync(filePath, fileContent)
+
+    return {
+      fileId: mediaId,
+      url: `/api/uploads/${mediaId}`,
+      mimeType: file.mimetype,
+      size: file.file ? file.file.length : fileContent.length,
+      originalName: file.filename,
+      path: filePath,
+    }
+  },
+
+  /**
+   * Delete a stored file by its ID.
+   * @param {string} fileId - The file ID
+   * @returns {Promise<object>} { deleted: boolean }
+   */
+  async deleteFile(fileId) {
+    const filePath = path.join(process.cwd(), 'uploads', `${fileId}.file`)
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath)
+      return { deleted: true }
+    }
+    return { deleted: false }
+  },
+}
 
 /**
  * Creates or retrieves a cached Matrix client for a given user.
