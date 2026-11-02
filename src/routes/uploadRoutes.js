@@ -1,4 +1,4 @@
-import { uploadService } from "../services/uploadService.js";
+import * as uploadService from "../services/uploadService.js";
 
 export async function uploadRoutes(fastify, opts) {
   // POST /api/upload

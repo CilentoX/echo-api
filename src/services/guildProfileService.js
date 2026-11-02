@@ -1,5 +1,5 @@
 import { prisma } from '../db.js'
-import { spaceSync } from '../lib/matrix/spaceSync.js'
+import * as spaceSync from '../lib/matrix/spaceSync.js'
 import { v4 as uuidv4 } from 'uuid'
 
 /**
