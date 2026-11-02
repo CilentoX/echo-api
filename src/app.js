@@ -1,8 +1,8 @@
 import Fastify from 'fastify'
-import { proxyToMatrix } from '../lib/matrix/proxy.js'
-import { handleSyncProxy } from '../lib/matrix/syncProxy.js'
-import { registerMessageRoutes } from '../routes/messageRoutes.js'
-import { registerAuthRoutes } from '../routes/authRoutes.js'
+import { proxyToMatrix } from './lib/matrix/proxy.js'
+import { handleSyncProxy } from './lib/matrix/syncProxy.js'
+import { registerMessageRoutes } from './routes/messageRoutes.js'
+import { registerAuthRoutes } from './routes/authRoutes.js'
 
 const app = Fastify({ logger: true })
 

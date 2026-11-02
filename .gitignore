@@ -19,6 +19,7 @@ Thumbs.db
 # Environment
 .env
 .env.local
+.env.coolify
 
 # Prisma
 prisma/*.db
