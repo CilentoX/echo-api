@@ -16,17 +16,24 @@ const app = Fastify({ logger: true })
 // Permite chamadas do app desktop (dev: http://localhost:1420) e de outros
 // clientes. Em produção, restringir a origens específicas via env CORS_ORIGIN.
 const corsOrigin = process.env.CORS_ORIGIN || '*'
+
+// Responder OPTIONS (preflight) antes de qualquer handler de rota
+app.addHook('onRequest', async (request, reply) => {
+  if (request.method === 'OPTIONS') {
+    reply
+      .header('Access-Control-Allow-Origin', corsOrigin)
+      .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+      .header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key')
+      .code(204)
+      .send()
+  }
+})
+
+// Adicionar headers CORS em todas as respostas
 app.addHook('onResponse', (request, reply) => {
   reply.header('Access-Control-Allow-Origin', corsOrigin)
   reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-  reply.header(
-    'Access-Control-Allow-Headers',
-    'Content-Type, Authorization, X-API-Key',
-  )
-  // Responder OPTIONS (preflight) com 204
-  if (request.method === 'OPTIONS') {
-    reply.code(204).send()
-  }
+  reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key')
 })
 
 /**
