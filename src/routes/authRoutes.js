@@ -1,5 +1,5 @@
 import Fastify from 'fastify'
-import { initiateGoogleSso, exchangeCodeForTokens } from '@/services/authService.js'
+import { initiateGoogleSso, exchangeCodeForTokens } from '../services/authService.js'
 
 /**
  * Registers Google SSO authentication routes.

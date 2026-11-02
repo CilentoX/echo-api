@@ -1,6 +1,6 @@
 import Fastify from 'fastify'
-import { authenticate } from '@/plugins/auth.js'
-import * as service from '@/services/userProfileService.js'
+import { authenticate } from '../plugins/auth.js'
+import * as service from '../services/userProfileService.js'
 
 /**
  * Registers user profile routes with the Fastify app.
