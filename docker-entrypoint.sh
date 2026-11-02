@@ -7,7 +7,7 @@
 set -e
 
 echo "=== Entrypoint: aguardando PostgreSQL ficar disponível ==="
-until pg_isready -h db -p 5432 -U "${POSTGRES_USER:-postgres}" >/dev/null 2>&1; do
+until pg_isready -h db -p 5432 -U postgres >/dev/null 2>&1; do
   echo "PostgreSQL não está pronto, aguardando 2s..."
   sleep 2
 done
@@ -23,12 +23,13 @@ else
   echo "=== Entrypoint: garantindo que o role '$DB_USER' exista ==="
 
   # Função para executar psql com retry
+  # Usa o superuser 'postgres' para criar o role, pois o role alvo pode não existir ainda
   run_psql() {
     local attempt=1
     local max_attempts=10
     until PGPASSWORD="${POSTGRES_PASSWORD}" psql \
       -h db \
-      -U "${POSTGRES_USER:-postgres}" \
+      -U postgres \
       -d "${POSTGRES_DB:-echo_profiles}" \
       -v ON_ERROR_STOP=0 \
       -c "$1" >/dev/null 2>&1; do
