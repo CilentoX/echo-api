@@ -57,4 +57,4 @@ else
 fi
 
 echo "=== Entrypoint: iniciando a aplicação ==="
-exec node dist/app.js
+exec node dist/server.js
