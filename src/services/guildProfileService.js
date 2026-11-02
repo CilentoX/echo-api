@@ -12,6 +12,44 @@ import { v4 as uuidv4 } from 'uuid'
 
 export const guildProfileService = {
   /**
+   * Get a guild profile by guildId.
+   * @param {string} guildId - The guild ID
+   * @returns {Promise<Object|null>} The guild profile, or null if not found
+   */
+  async getByGuildId(guildId) {
+    return await prisma.guildProfile.findUnique({
+      where: { guildId },
+    })
+  },
+
+  /**
+   * Create or update a guild profile.
+   * @param {object} data - Guild data { guildId, name, topic, isPrivate, maxMembers, ... }
+   * @returns {Promise<Object>} The created or updated guild profile
+   */
+  async upsert(data) {
+    const { guildId, ...rest } = data
+    return await prisma.guildProfile.upsert({
+      where: { guildId },
+      update: rest,
+      create: { guildId, ...rest },
+    })
+  },
+
+  /**
+   * Update a guild profile by id.
+   * @param {string} id - The guild profile id
+   * @param {object} data - Fields to update
+   * @returns {Promise<Object>} The updated guild profile
+   */
+  async patch(id, data) {
+    return await prisma.guildProfile.update({
+      where: { id },
+      data,
+    })
+  },
+
+  /**
    * Create a new guild and sync its Matrix Space.
    * @param {object} data - Guild data { guildId, name, topic, isPrivate, maxMembers }
    * @param {string} data.accessToken - User's Matrix access token

@@ -1,5 +1,6 @@
 import Fastify from 'fastify'
 import { authenticate } from '../plugins/auth.js'
+import { getMatrixClient } from '../lib/matrix/client.js'
 
 /**
  * Registers real-time operation routes.
