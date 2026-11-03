@@ -1,16 +1,12 @@
 # Echo API — Docker Compose (Coolify Production)
-# Deploys Fastify + Prisma API conectando no PostgreSQL do Synapse via rede interna.
+# Deploys Fastify + Prisma API conectando no PostgreSQL do Synapse via rede coolify.
 #
 # Variáveis de ambiente obrigatórias (definir no Coolify):
 #   ECHO_API_DB_PASSWORD      — Senha do PostgreSQL (mesma do Synapse)
 #   ECHO_API_API_KEY          — Chave de API para autenticar requisições
 #
-# Volumes externos (criar no Coolify antes do deploy):
-#   echo_api_uploads          — Armazena imagens enviadas (avatars, banners)
-#
 # Redes:
-#   coolify                   — Rede compartilhada com Synapse e Traefik (externa)
-#   internal                  — Rede interna entre containers (bridge local)
+#   coolify                   — Rede compartilhada com Synapse, Postgres e Traefik (externa)
 
 services:
   echo-api:
@@ -22,14 +18,13 @@ services:
     environment:
       PORT: 3001
       NODE_ENV: production
-      # DATABASE_URL construída a partir das variáveis individuais
-      DATABASE_URL: postgresql://synapse:${ECHO_API_DB_PASSWORD?ECHO_API_DB_PASSWORD is required}@echo-postgres:5432/echo_profiles?schema=public
+      # Conecta no PostgreSQL do Synapse via rede coolify (database 'synapse')
+      DATABASE_URL: postgresql://synapse:${ECHO_API_DB_PASSWORD?ECHO_API_DB_PASSWORD is required}@echo-postgres:5432/synapse?schema=public
       API_KEY: ${ECHO_API_API_KEY?ECHO_API_API_KEY is required}
       UPLOAD_DIR: /app/src/uploads
       MAX_FILE_SIZE: 10485760
       PUBLIC_BASE_URL: https://api.echo.litteris.online
     networks:
-      - internal
       - coolify
     volumes:
       - echo_api_uploads:/app/src/uploads
@@ -51,7 +46,5 @@ volumes:
   echo_api_uploads:
 
 networks:
-  internal:
-    driver: bridge
   coolify:
     external: true
