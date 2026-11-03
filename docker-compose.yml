@@ -49,8 +49,6 @@ services:
 
 volumes:
   echo_api_uploads:
-    external: true
-    name: echo_api_uploads
 
 networks:
   internal:
