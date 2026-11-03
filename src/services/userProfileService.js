@@ -117,7 +117,8 @@ export async function getProfile(userId) {
  * @returns {Promise<Object>} The updated UserProfile
  */
 export async function updateProfile(userId, data = {}, accessToken = null) {
-  const { nickname, avatarUrl, bannerUrl, bio, links } = data
+  const { avatarUrl, bannerUrl, bio, links } = data
+  const nickname = data.nickname !== undefined ? data.nickname : data.displayName
 
   if (nickname !== undefined && !isValidNickname(nickname)) {
     throw new Error(

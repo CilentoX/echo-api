@@ -10,13 +10,14 @@ const clients = new Map()
  * @returns {import('matrix-js-sdk').MatrixClientLike} The Matrix client instance
  */
 export function getMatrixClient(userId, accessToken, baseUrl) {
+  const url = baseUrl || process.env.SYNAPSE_URL || 'https://echo.litteris.online'
   // If client already exists for this userId, return it from cache
   if (clients.has(userId)) {
     return clients.get(userId)
   }
 
   const client = createClient({
-    baseUrl,
+    baseUrl: url,
     accessToken,
     userId,
   })

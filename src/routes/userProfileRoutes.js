@@ -30,6 +30,7 @@ export function registerUserProfileRoutes(app) {
         reply.send({
           userId,
           nickname: null,
+          displayName: null,
           avatarUrl: null,
           bannerUrl: null,
           bio: null,
@@ -41,6 +42,7 @@ export function registerUserProfileRoutes(app) {
       reply.send({
         userId: profile.userId,
         nickname: profile.nickname,
+        displayName: profile.nickname,
         avatarUrl: profile.avatarUrl,
         bannerUrl: profile.bannerUrl,
         bio: profile.bio,
@@ -69,6 +71,7 @@ export function registerUserProfileRoutes(app) {
       reply.send({
         userId: profile.userId,
         nickname: profile.nickname,
+        displayName: profile.nickname,
         avatarUrl: profile.avatarUrl,
         bannerUrl: profile.bannerUrl,
         bio: profile.bio,
@@ -80,7 +83,7 @@ export function registerUserProfileRoutes(app) {
   /**
    * PATCH /api/profiles/me
    * Updates fields of the current user's profile.
-   * Accepts { nickname, avatarUrl, bannerUrl, bio, links } or { data: { ... } }
+   * Accepts { nickname, displayName, avatarUrl, bannerUrl, bio, links } or { data: { ... } }
    */
   app.patch(
     '/api/profiles/me',
@@ -90,7 +93,9 @@ export function registerUserProfileRoutes(app) {
       const body = request.body || {}
       // Support both flat body and nested { data: { ... } }
       const payload = body.data ? { ...body.data } : { ...body }
-      if (body.nickname && !payload.nickname) payload.nickname = body.nickname
+      if (!payload.nickname && body.nickname) payload.nickname = body.nickname
+      if (!payload.nickname && body.displayName) payload.nickname = body.displayName
+      if (!payload.nickname && payload.displayName) payload.nickname = payload.displayName
 
       try {
         const updatedProfile = await service.updateProfile(
@@ -102,6 +107,7 @@ export function registerUserProfileRoutes(app) {
         reply.send({
           userId: updatedProfile.userId,
           nickname: updatedProfile.nickname,
+          displayName: updatedProfile.nickname,
           avatarUrl: updatedProfile.avatarUrl,
           bannerUrl: updatedProfile.bannerUrl,
           bio: updatedProfile.bio,
