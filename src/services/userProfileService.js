@@ -171,3 +171,26 @@ export async function setNicknameWithSync(userId, accessToken, nickname) {
 
   return updatedProfile
 }
+
+/**
+ * Deletes a user profile and saved tokens from the database.
+ * @param {string} userId - The user's Matrix user ID
+ * @returns {Promise<{ success: boolean }>}
+ */
+export async function deleteProfile(userId) {
+  try {
+    await prisma.userProfile.deleteMany({
+      where: { userId },
+    })
+  } catch (err) {
+    console.warn('[userProfileService] Error deleting userProfile:', err)
+  }
+  try {
+    await prisma.userToken.deleteMany({
+      where: { userId },
+    })
+  } catch (err) {
+    console.warn('[userProfileService] Error deleting userToken:', err)
+  }
+  return { success: true }
+}

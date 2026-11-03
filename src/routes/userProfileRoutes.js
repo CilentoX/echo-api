@@ -166,4 +166,22 @@ export function registerUserProfileRoutes(app) {
       }
     }
   )
+
+  /**
+   * DELETE /api/profiles/me
+   * Deletes the current user's profile and token data (reset account).
+   */
+  app.delete(
+    '/api/profiles/me',
+    { preHandler: authenticate },
+    async (request, reply) => {
+      const userId = request.user.userId
+      try {
+        await service.deleteProfile(userId)
+        reply.send({ success: true, message: 'Perfil e conta excluídos com sucesso' })
+      } catch (error) {
+        reply.code(500).send({ error: error.message })
+      }
+    }
+  )
 }
