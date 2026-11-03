@@ -1,4 +1,5 @@
 import Fastify from 'fastify'
+import multipart from '@fastify/multipart'
 import { PrismaClient } from '@prisma/client'
 import { proxyToMatrix } from './lib/matrix/proxy.js'
 import { handleSyncProxy } from './lib/matrix/syncProxy.js'
@@ -12,7 +13,14 @@ import { uploadRoutes } from './routes/uploadRoutes.js'
 import { registerRealtimeRoutes } from './routes/realtimeRoutes.js'
 import { setupPrismaClient } from './plugins/auth.js'
 
-const app = Fastify({ logger: true })
+const app = Fastify({ logger: true, ignoreTrailingSlash: true })
+
+// Suporte a upload multipart (imagens, avatares, áudio)
+await app.register(multipart, {
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10 MB
+  },
+})
 
 // Registrar Prisma client decorator para uso no middleware authenticate
 const prisma = new PrismaClient()
@@ -42,7 +50,7 @@ app.addHook('onRequest', async (request, reply) => {
     const corsOrigin = getCorsOrigin(request)
     reply
       .header('Access-Control-Allow-Origin', corsOrigin)
-      .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+      .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
       .header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key')
       .header('Access-Control-Allow-Credentials', 'true')
       .code(204)
@@ -54,7 +62,7 @@ app.addHook('onRequest', async (request, reply) => {
 app.addHook('onResponse', (request, reply) => {
   const corsOrigin = getCorsOrigin(request)
   reply.header('Access-Control-Allow-Origin', corsOrigin)
-  reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+  reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
   reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key')
   reply.header('Access-Control-Allow-Credentials', 'true')
 })
@@ -105,7 +113,8 @@ registerUserProfileRoutes(app)
 app.register(guildProfileRoutes, { prefix: '/api/guilds' })
 registerMemberRoutes(app)
 registerChatMediaRoutes(app)
-app.register(uploadRoutes, { prefix: '/api' })
+app.register(uploadRoutes, { prefix: '/api/upload' })
+app.register(uploadRoutes, { prefix: '/api/uploads' })
 registerRealtimeRoutes(app)
 
 export default app

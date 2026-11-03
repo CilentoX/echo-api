@@ -1,7 +1,9 @@
+import fs from "fs";
+import path from "path";
 import * as uploadService from "../services/uploadService.js";
 
 export async function uploadRoutes(fastify, opts) {
-  // POST /api/upload
+  // POST /api/upload e /api/upload/
   fastify.post(
     "/",
     async (request, reply) => {
@@ -19,6 +21,32 @@ export async function uploadRoutes(fastify, opts) {
         }
         throw err;
       }
+    }
+  );
+
+  // GET /api/upload/:fileId e /api/uploads/:fileId
+  fastify.get(
+    "/:fileId",
+    async (request, reply) => {
+      const { fileId } = request.params;
+      const cleanId = path.basename(fileId).replace(/\.file$/, "");
+      const filePath = path.join(process.cwd(), "uploads", `${cleanId}.file`);
+      const metaPath = path.join(process.cwd(), "uploads", `${cleanId}.meta.json`);
+
+      if (!fs.existsSync(filePath)) {
+        return reply.status(404).send({ error: "Arquivo não encontrado" });
+      }
+
+      let mimeType = "application/octet-stream";
+      if (fs.existsSync(metaPath)) {
+        try {
+          const meta = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
+          if (meta.mimeType) mimeType = meta.mimeType;
+        } catch {}
+      }
+
+      const stream = fs.createReadStream(filePath);
+      return reply.type(mimeType).send(stream);
     }
   );
 

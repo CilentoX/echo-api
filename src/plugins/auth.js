@@ -84,36 +84,74 @@ async function resolveUser(prisma, userId) {
   }
 }
 
+const synapseTokenCache = new Map()
+
 /**
- * Extended auth middleware that supports both:
- * 1. X-API-Key header (existing - for server-side)
- * 2. Authorization: Bearer <jwt> (new - for desktop clients)
+ * Validates a Matrix access token directly against Synapse.
+ * @param {string} token - The Matrix access token (e.g. syt_...)
+ * @returns {Promise<{ userId: string, accessToken: string, deviceId: string } | null>}
+ */
+export async function validateSynapseToken(token) {
+  if (!token) return null
+  const cached = synapseTokenCache.get(token)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.user
+  }
+
+  const synapseUrl = process.env.SYNAPSE_URL || 'https://echo.litteris.online'
+  try {
+    const res = await fetch(`${synapseUrl}/_matrix/client/v3/account/whoami`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) {
+      synapseTokenCache.delete(token)
+      return null
+    }
+    const data = await res.json()
+    if (!data.user_id) return null
+
+    const user = {
+      userId: data.user_id,
+      accessToken: token,
+      deviceId: data.device_id || 'synapse-session',
+    }
+    // Cache for 60 seconds
+    synapseTokenCache.set(token, {
+      user,
+      expiresAt: Date.now() + 60 * 1000,
+    })
+    return user
+  } catch (err) {
+    console.error('[validateSynapseToken] Error validating with Synapse:', err)
+    return null
+  }
+}
+
+/**
+ * Extended auth middleware that supports:
+ * 1. X-API-Key header (server-side)
+ * 2. Authorization: Bearer <jwt | matrix_token> (desktop & web clients)
  *
  * On success, populates request.user with { userId, accessToken, deviceId }
- * from the encrypted token store.
  *
  * @param {object} request - Fastify request object
  * @param {object} reply - Fastify reply object
  * @returns {Promise<void>} Returns 401 if authentication fails, continues if successful
  */
 export async function authenticate(request, reply) {
-  // Try X-API-Key first (existing authentication method)
-  // Fastify normalizes headers to lowercase
   const apiKey = request.headers['x-api-key']
   const authHeader = request.headers['authorization']
 
-  // Try X-API-Key first (existing authentication method)
+  // 1. Try X-API-Key first (existing authentication method)
   if (apiKey) {
-    const prisma = request.prisma()
-    const userData = await resolveUser(prisma, apiKey)
+    const prisma = typeof request.prisma === 'function' ? request.prisma() : null
+    const userData = prisma ? await resolveUser(prisma, apiKey) : null
 
     if (!userData) {
       reply.code(401).send({ error: 'Unauthorized: invalid API key' })
       return
     }
 
-    // Populate request.user
-    // Per spec: X-API-Key maps to a user record via the token store
     request.user = {
       userId: userData.userToken.userId,
       accessToken: userData.accessToken,
@@ -122,42 +160,66 @@ export async function authenticate(request, reply) {
     return
   }
 
-  // Try Authorization: Bearer <jwt> (new method for desktop)
+  // 2. Try Authorization: Bearer <token>
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    const jwt = authHeader.substring(7)
+    const token = authHeader.substring(7).trim()
 
-    // JWT verification with jose library - separate secret from encryption key
-    const prisma = request.prisma()
-    let userData = null
-    let userId = null
+    if (!token) {
+      reply.code(401).send({ error: 'Unauthorized: empty bearer token' })
+      return
+    }
 
+    // A) Synapse Matrix access token (starts with syt_)
+    if (token.startsWith('syt_')) {
+      const user = await validateSynapseToken(token)
+      if (user) {
+        request.user = user
+        return
+      }
+      reply.code(401).send({ error: 'Unauthorized: invalid or expired matrix token' })
+      return
+    }
+
+    // B) Try JWT verification with jose
     try {
-      // Use separate JWT_SECRET for signing/verification (not TOKEN_ENCRYPTION_KEY)
       const secretKey = getJwtSecret()
       const options = getJwtVerifyOptions()
-      const { payload } = await jwtVerify(jwt, secretKey, options)
-      userId = payload.sub
+      const { payload } = await jwtVerify(token, secretKey, options)
+      const userId = payload.sub
+      const prisma = typeof request.prisma === 'function' ? request.prisma() : null
+      const userData = prisma ? await resolveUser(prisma, userId) : null
+
+      if (userData) {
+        request.user = {
+          userId: userData.userToken.userId,
+          accessToken: userData.accessToken,
+          deviceId: userData.deviceId,
+        }
+        return
+      }
+
+      request.user = {
+        userId,
+        accessToken: token,
+        deviceId: payload.deviceId || 'jwt-session',
+      }
+      return
     } catch (error) {
-      // Invalid/expired/tampered JWT - NO fallback, return 401 immediately
-      reply.code(401).send({ error: 'Unauthorized: invalid or expired bearer token' })
+      // If it looks like a JWT (header.payload.signature), return 401 immediately
+      if (token.split('.').length === 3) {
+        reply.code(401).send({ error: 'Unauthorized: invalid or expired bearer token' })
+        return
+      }
+    }
+
+    // C) Fallback: Check if it's a valid Synapse token even without syt_ prefix
+    const user = await validateSynapseToken(token)
+    if (user) {
+      request.user = user
       return
     }
 
-    userData = await resolveUser(prisma, userId)
-
-    if (!userData) {
-      console.error('[AUTH] No user data found for userId:', userId)
-      reply.code(401).send({ error: 'Unauthorized: invalid bearer token' })
-      return
-    }
-
-    // Populate request.user
-    // Per spec: JWT should be verified and decoded to extract userId
-    request.user = {
-      userId: userData.userToken.userId,
-      accessToken: userData.accessToken,
-      deviceId: userData.deviceId,
-    }
+    reply.code(401).send({ error: 'Unauthorized: invalid bearer token' })
     return
   }
 

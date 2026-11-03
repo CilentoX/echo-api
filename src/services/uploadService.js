@@ -12,26 +12,45 @@ export const uploadService = {
   /**
    * Save an uploaded file to local storage and Synapse.
    * @param {object} file - Fastify multipart file object
-   * @returns {Promise<object>} { fileId, url, mimeType, size, originalName, path }
+   * @returns {Promise<object>} { fileId, url, mxcUri, contentUri, mimeType, size, originalName, path }
    */
   async saveFile(file) {
     const mediaId = uuidv4()
     const uploadsDir = path.join(process.cwd(), 'uploads')
     const filePath = path.join(uploadsDir, `${mediaId}.file`)
+    const metaPath = path.join(uploadsDir, `${mediaId}.meta.json`)
 
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true })
     }
 
-    const fileContent = await file.toBuffer()
+    const fileContent = typeof file.toBuffer === 'function' ? await file.toBuffer() : file.data
     fs.writeFileSync(filePath, fileContent)
+
+    const mimeType = file.mimetype || 'application/octet-stream'
+    const originalName = file.filename || `${mediaId}.bin`
+    const size = file.file ? file.file.length : fileContent.length
+
+    fs.writeFileSync(
+      metaPath,
+      JSON.stringify({
+        mimeType,
+        originalName,
+        size,
+        createdAt: new Date().toISOString(),
+      })
+    )
+
+    const apiBase = process.env.API_BASE_URL || 'https://echo-api.litteris.online'
 
     return {
       fileId: mediaId,
       url: `/api/uploads/${mediaId}`,
-      mimeType: file.mimetype,
-      size: file.file ? file.file.length : fileContent.length,
-      originalName: file.filename,
+      mxcUri: `${apiBase}/api/uploads/${mediaId}`,
+      contentUri: `${apiBase}/api/uploads/${mediaId}`,
+      mimeType,
+      size,
+      originalName,
       path: filePath,
     }
   },
@@ -43,11 +62,16 @@ export const uploadService = {
    */
   async deleteFile(fileId) {
     const filePath = path.join(process.cwd(), 'uploads', `${fileId}.file`)
+    const metaPath = path.join(process.cwd(), 'uploads', `${fileId}.meta.json`)
+    let deleted = false
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath)
-      return { deleted: true }
+      deleted = true
     }
-    return { deleted: false }
+    if (fs.existsSync(metaPath)) {
+      fs.unlinkSync(metaPath)
+    }
+    return { deleted }
   },
 }
 
