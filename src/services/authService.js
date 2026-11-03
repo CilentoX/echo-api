@@ -11,16 +11,18 @@ function generateState() {
 
 /**
  * Initiates the Google SSO login flow.
- * Builds the Synapse OIDC redirect URL and returns the login URL and state.
+ * Builds the Synapse Matrix SSO redirect URL and returns the login URL and state.
  *
  * @param {string} redirectUrl - The URL to redirect back to after authentication
+ * @param {string} [idpId='oidc-google'] - The identity provider ID on Synapse
  * @returns {{ loginUrl: string, state: string }} The login URL and state token
  */
-export function initiateGoogleSso(redirectUrl) {
+export function initiateGoogleSso(redirectUrl, idpId = 'oidc-google') {
   const state = generateState()
 
-  // Build the Synapse OIDC redirect URL
-  const loginUrl = `${process.env.SYNAPSE_URL}/_synapse/client/oidc/redirect/google?redirectUrl=${encodeURIComponent(
+  // Build the Synapse Matrix SSO redirect URL
+  const provider = idpId || 'oidc-google'
+  const loginUrl = `${process.env.SYNAPSE_URL}/_matrix/client/v3/login/sso/redirect/${provider}?redirectUrl=${encodeURIComponent(
     redirectUrl,
   )}`
 
@@ -28,35 +30,33 @@ export function initiateGoogleSso(redirectUrl) {
 }
 
 /**
- * Exchanges the authorization code for tokens via Synapse OIDC callback.
- * Validates the state against the cached value, then calls Synapse to get tokens.
+ * Exchanges the Matrix SSO loginToken for session tokens via Synapse m.login.token.
  *
- * @param {string} code - The authorization code from the Google callback
- * @param {string} state - The state token to validate against cache
- * @returns {{ accessToken, refreshToken, deviceId, userId }} The exchanged tokens
+ * @param {string} code - The login token from the Synapse redirect
+ * @param {string} [state] - The optional state token
+ * @param {object} [prisma] - The Prisma client instance
+ * @returns {Promise<{ accessToken, refreshToken, deviceId, userId }>} The exchanged tokens
  */
-export async function exchangeCodeForTokens(code, state) {
-  // Validate state matches cache
-  // In a full implementation, this would check against a Redis or memory cache
-  // For now, we just verify the state is present and non-empty
+export async function exchangeCodeForTokens(code, state, prisma = null) {
+  // Validate state parameter
   if (!state || typeof state !== 'string') {
     throw new Error('Invalid or missing state parameter')
   }
 
-  // Validate code is present
+  // Validate code/token is present
   if (!code || typeof code !== 'string') {
     throw new Error('Invalid or missing code parameter')
   }
 
-  // Call Synapse OIDC callback to exchange code for tokens
-  const synapseResponse = await fetch(`${process.env.SYNAPSE_URL}/_synapse/client/oidc/callback`, {
+  // Call Synapse /_matrix/client/v3/login to exchange token for access_token
+  const synapseResponse = await fetch(`${process.env.SYNAPSE_URL}/_matrix/client/v3/login`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
+      'Content-Type': 'application/json',
     },
-    body: new URLSearchParams({
-      code,
-      state,
+    body: JSON.stringify({
+      type: 'm.login.token',
+      token: code,
     }),
   })
 
@@ -67,10 +67,21 @@ export async function exchangeCodeForTokens(code, state) {
 
   const tokens = await synapseResponse.json()
 
-  return {
+  const result = {
     accessToken: tokens.access_token,
-    refreshToken: tokens.refresh_token,
+    refreshToken: tokens.refresh_token || null,
     deviceId: tokens.device_id,
     userId: tokens.user_id,
   }
+
+  if (prisma) {
+    try {
+      const { storeUserTokensDB } = await import('../lib/auth/tokenStore.js')
+      await storeUserTokensDB(prisma, result.userId, result.accessToken, result.refreshToken, result.deviceId)
+    } catch (err) {
+      console.error('[authService] Error saving user token to DB:', err)
+    }
+  }
+
+  return result
 }

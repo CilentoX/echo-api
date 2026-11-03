@@ -1,12 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
-// Mock the matrix client module - always returns a functional mock client
-vi.mock('@/lib/matrix/client.js', () => ({
-  getMatrixClient: vi.fn().mockResolvedValue({
+const { mockMatrixClient } = vi.hoisted(() => ({
+  mockMatrixClient: {
     sendTyping: vi.fn().mockResolvedValue({}),
     sendReadReceipt: vi.fn().mockResolvedValue({}),
     getPresence: vi.fn().mockResolvedValue({ presence: 'online' }),
-  }),
+  },
+}))
+
+// Mock the matrix client module - always returns a functional mock client
+vi.mock('@/lib/matrix/client.js', () => ({
+  getMatrixClient: vi.fn().mockResolvedValue(mockMatrixClient),
 }))
 
 // Mock the matrix-js-sdk client methods
@@ -41,7 +45,7 @@ vi.mock('@/lib/auth/tokenStore.js', () => ({
 // Mock the auth plugin - authenticate has length 2 so Fastify does NOT pass 'next'
 // When authenticate completes, Fastify continues to the route handler automatically
 vi.mock('../../src/plugins/auth.js', () => {
-  const authenticate = vi.fn((request, reply) => {
+  const authenticate = vi.fn(async (request, reply) => {
     const authHeader = request.headers['authorization']
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       reply.code(401).send({ error: 'Unauthorized: no authentication credentials' })
@@ -52,7 +56,6 @@ vi.mock('../../src/plugins/auth.js', () => {
       accessToken: 'real-access-token',
       deviceId: null,
     }
-    // No next() call - Fastify continues automatically for 2-arg preHandlers
   })
   Object.defineProperty(authenticate, 'length', { value: 2 })
   return {
@@ -118,8 +121,7 @@ describe('realtimeRoutes', () => {
       expect(response.statusCode).toBe(200)
       const body = JSON.parse(response.body)
       expect(body.success).toBe(true)
-      const client = vi.mocked(getMatrixClient).mock.results[0].value
-      expect(client.sendTyping).toHaveBeenCalledWith(
+      expect(mockMatrixClient.sendTyping).toHaveBeenCalledWith(
         'testroom:example.com',
         true,
         30000,
@@ -164,8 +166,7 @@ describe('realtimeRoutes', () => {
       expect(response.statusCode).toBe(200)
       const body = JSON.parse(response.body)
       expect(body.success).toBe(true)
-      const client = vi.mocked(getMatrixClient).mock.results[0].value
-      expect(client.sendReadReceipt).toHaveBeenCalledWith(
+      expect(mockMatrixClient.sendReadReceipt).toHaveBeenCalledWith(
         'testroom:example.com',
         '$event1:example.com',
         'm.read',
@@ -195,8 +196,7 @@ describe('realtimeRoutes', () => {
       expect(response.statusCode).toBe(200)
       const body = JSON.parse(response.body)
       expect(body.presence).toBe('online')
-      const client = vi.mocked(getMatrixClient).mock.results[0].value
-      expect(client.getPresence).toHaveBeenCalledWith('@testuser:example.com')
+      expect(mockMatrixClient.getPresence).toHaveBeenCalledWith('@testuser:example.com')
     })
   })
 })

@@ -39,8 +39,8 @@ describe('authService - initiateGoogleSso', () => {
       expect(result).toHaveProperty('loginUrl')
       expect(result).toHaveProperty('state')
 
-      // loginUrl should contain the Synapse OIDC redirect path
-      expect(result.loginUrl).toContain('_synapse/client/oidc/redirect/google')
+      // loginUrl should contain the Matrix SSO redirect path
+      expect(result.loginUrl).toContain('_matrix/client/v3/login/sso/redirect/oidc-google')
 
       // loginUrl should contain the redirectUrl parameter
       expect(result.loginUrl).toContain('redirectUrl=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcallback')

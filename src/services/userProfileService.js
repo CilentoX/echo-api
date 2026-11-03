@@ -75,18 +75,13 @@ export async function setNickname(userId, nickname) {
     },
   })
 
-  // Sync the display name to Matrix
-  // We need the access token - but setNickname doesn't have it directly.
-  // The route handler will need to call syncDisplayNameToMatrix separately
-  // with the access token from the request.
-
   return updatedProfile
 }
 
 /**
  * Gets the nickname for a user.
  * @param {string} userId - The user's Matrix user ID (e.g. "@user:domain")
- * @returns {Promise<Object|null>} The UserProfile, or null if not found
+ * @returns {Promise<string|null>} The nickname, or null if not found
  */
 export async function getNickname(userId) {
   const profile = await prisma.userProfile.findUnique({
@@ -98,6 +93,63 @@ export async function getNickname(userId) {
   }
 
   return getNicknameFromProfile(profile)
+}
+
+/**
+ * Gets the complete UserProfile for a user.
+ * @param {string} userId - The user's Matrix user ID
+ * @returns {Promise<Object|null>} The UserProfile record, or null if not found
+ */
+export async function getProfile(userId) {
+  const profile = await prisma.userProfile.findUnique({
+    where: { userId },
+  })
+
+  return profile || null
+}
+
+/**
+ * Updates a user's profile with partial or complete fields.
+ *
+ * @param {string} userId - The user's Matrix user ID
+ * @param {Object} data - Profile fields ({ nickname, avatarUrl, bannerUrl, bio, links })
+ * @param {string} [accessToken] - Matrix access token for syncing display name
+ * @returns {Promise<Object>} The updated UserProfile
+ */
+export async function updateProfile(userId, data = {}, accessToken = null) {
+  const { nickname, avatarUrl, bannerUrl, bio, links } = data
+
+  if (nickname !== undefined && !isValidNickname(nickname)) {
+    throw new Error(
+      'Invalid nickname: must be 1-32 characters and contain no control characters'
+    )
+  }
+
+  const updateData = {}
+  if (nickname !== undefined) updateData.nickname = nickname
+  if (avatarUrl !== undefined) updateData.avatarUrl = avatarUrl
+  if (bannerUrl !== undefined) updateData.bannerUrl = bannerUrl
+  if (bio !== undefined) updateData.bio = bio
+  if (links !== undefined) updateData.links = links
+
+  const updatedProfile = await prisma.userProfile.upsert({
+    where: { userId },
+    update: updateData,
+    create: {
+      userId,
+      ...updateData,
+    },
+  })
+
+  if (nickname !== undefined && accessToken) {
+    try {
+      await syncDisplayNameToMatrix(userId, accessToken, nickname)
+    } catch (err) {
+      console.error('[userProfileService] Error syncing display name to Matrix:', err)
+    }
+  }
+
+  return updatedProfile
 }
 
 /**

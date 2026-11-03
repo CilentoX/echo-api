@@ -24,8 +24,7 @@ export function registerRealtimeRoutes(app) {
    */
   app.put(
     '/api/rooms/:roomId/typing',
-    {},
-    authenticate,
+    { preHandler: authenticate },
     async (request, reply) => {
       const { roomId } = request.params
       const { typing, timeout } = request.body
@@ -63,8 +62,7 @@ export function registerRealtimeRoutes(app) {
    */
   app.put(
     '/api/rooms/:roomId/receipt',
-    {},
-    authenticate,
+    { preHandler: authenticate },
     async (request, reply) => {
       const { roomId } = request.params
       const { eventId, receiptType } = request.body
@@ -101,8 +99,7 @@ export function registerRealtimeRoutes(app) {
    */
   app.get(
     '/api/users/:userId/presence',
-    {},
-    authenticate,
+    { preHandler: authenticate },
     async (request, reply) => {
       const { userId } = request.params
       const accessToken = request.user?.accessToken

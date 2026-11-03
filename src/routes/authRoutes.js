@@ -25,14 +25,14 @@ export function registerAuthRoutes(app) {
    * @returns {void}
    */
   app.get('/auth/google', async (request, reply) => {
-    const { redirectUrl } = request.query
+    const { redirectUrl, idpId } = request.query
 
     if (!redirectUrl) {
       reply.code(400).send({ error: 'redirectUrl query parameter is required' })
       return
     }
 
-    const { loginUrl, state } = initiateGoogleSso(redirectUrl)
+    const { loginUrl, state } = initiateGoogleSso(redirectUrl, idpId)
 
     // Store the state in a short-lived cache for CSRF validation later
     // In production, this would be Redis; for now we rely on the flow
@@ -98,11 +98,9 @@ export function registerAuthRoutes(app) {
       // Get state from query or generate a default for this flow
       // In a real implementation, the state would be retrieved from cache
       const state = request.query.state || 'default-state'
+      const prisma = typeof request.prisma === 'function' ? request.prisma() : null
 
-      const tokens = await exchangeCodeForTokens(code, state)
-
-      // Store tokens in the token store
-      // tokenStore.storeUserTokens(tokens.userId, tokens.accessToken, tokens.refreshToken, tokens.deviceId)
+      const tokens = await exchangeCodeForTokens(code, state, prisma)
 
       reply.send(tokens)
     } catch (error) {

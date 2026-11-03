@@ -4,7 +4,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 vi.mock('@/services/authService.js', () => ({
   initiateGoogleSso: vi.fn((redirectUrl) => {
     return {
-      loginUrl: 'http://localhost:8088/_synapse/client/oidc/redirect/google?redirectUrl=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcallback',
+      loginUrl: 'http://localhost:8088/_matrix/client/v3/login/sso/redirect/oidc-google?redirectUrl=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcallback',
       state: 'base64state123',
     }
   }),
@@ -60,7 +60,7 @@ describe('authRoutes - Google SSO login endpoint', () => {
       const body = response.json()
       expect(body).toHaveProperty('loginUrl')
       expect(body).toHaveProperty('state')
-      expect(body.loginUrl).toContain('_synapse/client/oidc/redirect/google')
+      expect(body.loginUrl).toContain('_matrix/client/v3/login/sso/redirect/oidc-google')
     })
   })
 
