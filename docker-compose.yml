@@ -23,7 +23,7 @@ services:
       API_KEY: ${ECHO_API_API_KEY?ECHO_API_API_KEY is required}
       UPLOAD_DIR: /app/src/uploads
       MAX_FILE_SIZE: 10485760
-      PUBLIC_BASE_URL: https://api.echo.litteris.online
+      PUBLIC_BASE_URL: https://echo-api.litteris.online
     networks:
       - coolify
     volumes:
@@ -31,7 +31,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=coolify"
-      - "traefik.http.routers.echo-api.rule=Host(`api.echo.litteris.online`)"
+      - "traefik.http.routers.echo-api.rule=Host(`echo-api.litteris.online`)"
       - "traefik.http.routers.echo-api.entryPoints=http"
       - "traefik.http.services.echo-api.loadbalancer.server.port=3001"
       - "traefik.http.middlewares.echo-api-proto.headers.customrequestheaders.X-Forwarded-Proto=https"
