@@ -1,8 +1,11 @@
 #!/bin/sh
-# Entrypoint: roda migrações Prisma e inicia a aplicação
+# Entrypoint: roda prisma db push (cria tabelas sem migrations) e inicia a aplicação
 
-echo "=== Entrypoint: rodando migrações Prisma ==="
-npx prisma migrate deploy
+echo "=== Entrypoint: gerando Prisma Client ==="
+npx prisma generate
+
+echo "=== Entrypoint: criando/atualizando tabelas (db push) ==="
+npx prisma db push --accept-data-loss
 
 echo "=== Entrypoint: iniciando a aplicação ==="
 exec node dist/server.js
