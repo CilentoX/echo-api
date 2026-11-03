@@ -21,15 +21,30 @@ await app.register(setupPrismaClient, { client: prisma })
 // ── CORS ──
 // Permite chamadas do app desktop (dev: http://localhost:1420) e de outros
 // clientes. Em produção, restringir a origens específicas via env CORS_ORIGIN.
-const corsOrigin = process.env.CORS_ORIGIN || '*'
+const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:1420,https://echo-api.litteris.online')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean)
+
+function getCorsOrigin(request) {
+  const origin = request.headers.origin
+  if (!origin) return allowedOrigins[0]
+  // Permitir se origin está na lista ou se é wildcard
+  if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+    return origin
+  }
+  return allowedOrigins[0]
+}
 
 // Responder OPTIONS (preflight) antes de qualquer handler de rota
 app.addHook('onRequest', async (request, reply) => {
   if (request.method === 'OPTIONS') {
+    const corsOrigin = getCorsOrigin(request)
     reply
       .header('Access-Control-Allow-Origin', corsOrigin)
       .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
       .header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key')
+      .header('Access-Control-Allow-Credentials', 'true')
       .code(204)
       .send()
   }
@@ -37,9 +52,11 @@ app.addHook('onRequest', async (request, reply) => {
 
 // Adicionar headers CORS em todas as respostas
 app.addHook('onResponse', (request, reply) => {
+  const corsOrigin = getCorsOrigin(request)
   reply.header('Access-Control-Allow-Origin', corsOrigin)
   reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
   reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key')
+  reply.header('Access-Control-Allow-Credentials', 'true')
 })
 
 // Health check route
