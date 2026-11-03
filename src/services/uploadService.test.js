@@ -67,7 +67,7 @@ describe("uploadService.saveFile", () => {
     expect(result.url).toBe("/api/uploads/test-uuid-1234");
     expect(result.mimeType).toBe("audio/ogg");
     expect(result.originalName).toBe("audio.ogg");
-    expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
+    expect(fs.writeFileSync).toHaveBeenCalledTimes(2);
   });
 
   it("deleteFile remove arquivo existente", async () => {

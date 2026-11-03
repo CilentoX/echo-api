@@ -8,72 +8,67 @@ const clients = new Map()
 /**
  * Upload service - provides saveFile and deleteFile for upload routes.
  */
-export const uploadService = {
-  /**
-   * Save an uploaded file to local storage and Synapse.
-   * @param {object} file - Fastify multipart file object
-   * @returns {Promise<object>} { fileId, url, mxcUri, contentUri, mimeType, size, originalName, path }
-   */
-  async saveFile(file) {
-    const mediaId = uuidv4()
-    const uploadsDir = path.join(process.cwd(), 'uploads')
-    const filePath = path.join(uploadsDir, `${mediaId}.file`)
-    const metaPath = path.join(uploadsDir, `${mediaId}.meta.json`)
+export async function saveFile(file) {
+  const mediaId = uuidv4()
+  const uploadsDir = path.join(process.cwd(), 'uploads')
+  const filePath = path.join(uploadsDir, `${mediaId}.file`)
+  const metaPath = path.join(uploadsDir, `${mediaId}.meta.json`)
 
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true })
-    }
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true })
+  }
 
-    const fileContent = typeof file.toBuffer === 'function' ? await file.toBuffer() : file.data
-    fs.writeFileSync(filePath, fileContent)
+  const fileContent = typeof file.toBuffer === 'function' ? await file.toBuffer() : file.data
+  fs.writeFileSync(filePath, fileContent)
 
-    const mimeType = file.mimetype || 'application/octet-stream'
-    const originalName = file.filename || `${mediaId}.bin`
-    const size = file.file ? file.file.length : fileContent.length
+  const mimeType = file.mimetype || 'application/octet-stream'
+  const originalName = file.filename || `${mediaId}.bin`
+  const size = file.file ? file.file.length : fileContent.length
 
-    fs.writeFileSync(
-      metaPath,
-      JSON.stringify({
-        mimeType,
-        originalName,
-        size,
-        createdAt: new Date().toISOString(),
-      })
-    )
-
-    const apiBase = process.env.API_BASE_URL || 'https://echo-api.litteris.online'
-
-    return {
-      fileId: mediaId,
-      url: `/api/uploads/${mediaId}`,
-      mxcUri: `${apiBase}/api/uploads/${mediaId}`,
-      contentUri: `${apiBase}/api/uploads/${mediaId}`,
+  fs.writeFileSync(
+    metaPath,
+    JSON.stringify({
       mimeType,
-      size,
       originalName,
-      path: filePath,
-    }
-  },
+      size,
+      createdAt: new Date().toISOString(),
+    })
+  )
 
-  /**
-   * Delete a stored file by its ID.
-   * @param {string} fileId - The file ID
-   * @returns {Promise<object>} { deleted: boolean }
-   */
-  async deleteFile(fileId) {
-    const filePath = path.join(process.cwd(), 'uploads', `${fileId}.file`)
-    const metaPath = path.join(process.cwd(), 'uploads', `${fileId}.meta.json`)
-    let deleted = false
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath)
-      deleted = true
-    }
-    if (fs.existsSync(metaPath)) {
-      fs.unlinkSync(metaPath)
-    }
-    return { deleted }
-  },
+  const apiBase = process.env.API_BASE_URL || 'https://echo-api.litteris.online'
+
+  return {
+    fileId: mediaId,
+    url: `/api/uploads/${mediaId}`,
+    mxcUri: `${apiBase}/api/uploads/${mediaId}`,
+    contentUri: `${apiBase}/api/uploads/${mediaId}`,
+    mimeType,
+    size,
+    originalName,
+    path: filePath,
+  }
 }
+
+export async function deleteFile(fileId) {
+  const filePath = path.join(process.cwd(), 'uploads', `${fileId}.file`)
+  const metaPath = path.join(process.cwd(), 'uploads', `${fileId}.meta.json`)
+  let deleted = false
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath)
+    deleted = true
+  }
+  if (fs.existsSync(metaPath)) {
+    fs.unlinkSync(metaPath)
+  }
+  return { deleted }
+}
+
+export const uploadService = {
+  saveFile,
+  deleteFile,
+}
+
+export default uploadService
 
 /**
  * Creates or retrieves a cached Matrix client for a given user.

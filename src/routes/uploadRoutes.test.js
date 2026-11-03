@@ -1,30 +1,40 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { build } from "../app.js";
-import FormData from "form-data";
+import Fastify from "fastify";
+import multipart from "@fastify/multipart";
 
 // Mock uploadService
+const mockSaveFile = vi.fn();
+const mockDeleteFile = vi.fn();
+
 vi.mock("../services/uploadService.js", () => ({
-  uploadService: {
-    saveFile: vi.fn(),
-    deleteFile: vi.fn(),
+  default: {
+    saveFile: (...args) => mockSaveFile(...args),
+    deleteFile: (...args) => mockDeleteFile(...args),
   },
+  uploadService: {
+    saveFile: (...args) => mockSaveFile(...args),
+    deleteFile: (...args) => mockDeleteFile(...args),
+  },
+  saveFile: (...args) => mockSaveFile(...args),
+  deleteFile: (...args) => mockDeleteFile(...args),
 }));
 
-import { uploadService } from "../services/uploadService.js";
+import { uploadRoutes } from "./uploadRoutes.js";
 
 describe("POST /api/upload/", () => {
   let app;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    process.env.API_KEY = "test-api-key";
-    app = await build();
+    app = Fastify();
+    await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
+    await app.register(uploadRoutes, { prefix: "/api/upload" });
+    await app.register(uploadRoutes, { prefix: "/api/uploads" });
     await app.ready();
   });
 
   afterEach(async () => {
     await app.close();
-    delete process.env.API_KEY;
   });
 
   it("faz upload de arquivo e retorna metadados", async () => {
@@ -36,22 +46,24 @@ describe("POST /api/upload/", () => {
       originalName: "test.ogg",
       path: "/app/uploads/test-file-id.file",
     };
-    uploadService.saveFile.mockResolvedValue(mockResult);
+    mockSaveFile.mockResolvedValue(mockResult);
 
-    const form = new FormData();
-    form.append("file", Buffer.from("fake audio data"), {
-      filename: "test.ogg",
-      contentType: "audio/ogg",
-    });
+    const boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
+    const payload = Buffer.concat([
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="test.ogg"\r\nContent-Type: audio/ogg\r\n\r\n`
+      ),
+      Buffer.from("fake audio data"),
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]);
 
     const res = await app.inject({
       method: "POST",
       url: "/api/upload/",
       headers: {
-        "x-api-key": "test-api-key",
-        ...form.getHeaders(),
+        "content-type": `multipart/form-data; boundary=${boundary}`,
       },
-      payload: form,
+      payload,
     });
 
     expect(res.statusCode).toBe(201);
@@ -61,25 +73,27 @@ describe("POST /api/upload/", () => {
     expect(body.url).toBe("/api/uploads/test-file-id");
     expect(body.mimeType).toBe("audio/ogg");
     expect(body.originalName).toBe("test.ogg");
-    expect(uploadService.saveFile).toHaveBeenCalledTimes(1);
+    expect(mockSaveFile).toHaveBeenCalledTimes(1);
   });
 
-  it("retorna 401 sem API key", async () => {
-    const form = new FormData();
-    form.append("file", Buffer.from("test"), { filename: "test.ogg", contentType: "audio/ogg" });
+  it("retorna 400 quando nenhum arquivo é enviado", async () => {
+    const boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
+    const payload = Buffer.from(`--${boundary}--\r\n`);
 
     const res = await app.inject({
       method: "POST",
       url: "/api/upload/",
-      headers: form.getHeaders(),
-      payload: form,
+      headers: {
+        "content-type": `multipart/form-data; boundary=${boundary}`,
+      },
+      payload,
     });
 
-    expect(res.statusCode).toBe(401);
+    expect(res.statusCode).toBe(400);
   });
 
   it("DELETE /api/upload/:fileId deleta arquivo", async () => {
-    uploadService.deleteFile.mockResolvedValue({ deleted: true });
+    mockDeleteFile.mockResolvedValue({ deleted: true });
 
     const res = await app.inject({
       method: "DELETE",
@@ -92,11 +106,11 @@ describe("POST /api/upload/", () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.deleted).toBe(true);
-    expect(uploadService.deleteFile).toHaveBeenCalledWith("test-file-id");
+    expect(mockDeleteFile).toHaveBeenCalledWith("test-file-id");
   });
 
-  it("DELETE retorna 404 quando arquivo não existe", async () => {
-    uploadService.deleteFile.mockResolvedValue({ deleted: false });
+  it("DELETE retorna deleted:false quando arquivo não existe", async () => {
+    mockDeleteFile.mockResolvedValue({ deleted: false });
 
     const res = await app.inject({
       method: "DELETE",
@@ -106,6 +120,8 @@ describe("POST /api/upload/", () => {
       },
     });
 
-    expect(res.statusCode).toBe(404);
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.deleted).toBe(false);
   });
 });

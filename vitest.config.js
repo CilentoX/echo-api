@@ -7,7 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export default defineConfig({
   root: __dirname,
   test: {
-    include: ['tests/**/*.test.js'],
+    include: ['tests/**/*.test.js', 'src/**/*.test.js'],
   },
   resolve: {
     alias: {

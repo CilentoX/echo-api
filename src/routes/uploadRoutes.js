@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import * as uploadService from "../services/uploadService.js";
+import uploadService, { saveFile, deleteFile } from "../services/uploadService.js";
 
 export async function uploadRoutes(fastify, opts) {
   // POST /api/upload e /api/upload/
@@ -13,7 +13,8 @@ export async function uploadRoutes(fastify, opts) {
           return reply.status(400).send({ error: "Nenhum arquivo enviado" });
         }
 
-        const result = await uploadService.saveFile(data);
+        const saveFn = uploadService?.saveFile || saveFile;
+        const result = await saveFn(data);
         return reply.status(201).send(result);
       } catch (err) {
         if (err.message === "Tipo de arquivo não permitido") {
@@ -56,7 +57,8 @@ export async function uploadRoutes(fastify, opts) {
     { param: { type: "object", properties: { fileId: { type: "string" } } } },
     async (request, reply) => {
       const { fileId } = request.params;
-      const result = await uploadService.deleteFile(fileId);
+      const deleteFn = uploadService?.deleteFile || deleteFile;
+      const result = await deleteFn(fileId);
       return result;
     }
   );
