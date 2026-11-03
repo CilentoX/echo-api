@@ -10,58 +10,80 @@ datasource db {
 }
 
 model UserToken {
-  userId      String @unique
-  accessToken String  // encrypted
-  refreshToken String? // encrypted
-  deviceId    String?
-  updatedAt   DateTime @updatedAt
+  userId       String   @unique
+  accessToken  String   // encrypted
+  refreshToken String?  // encrypted
+  deviceId     String?
+  updatedAt    DateTime @updatedAt
 }
 
 model UserProfile {
-  userId    String @unique
+  userId    String  @unique
   nickname  String? @unique
   avatarUrl String?
   bannerUrl String?
   bio       String?
-  links     Json   @default("[]")
+  links     Json    @default("[]")
 }
 
 model ChatMedia {
-  mediaId    String @unique
-  userId     String
-  roomId     String?
-  filePath   String
-  fileType   String // e.g., "image", "audio"
-  mimeType   String
-  fileSize   Int?
-  width      Int?
-  height     Int?
-  duration   Int?
+  mediaId       String   @unique
+  userId        String
+  roomId        String?
+  filePath      String
+  fileType      String   // e.g., "image", "audio"
+  mimeType      String
+  fileSize      Int?
+  width         Int?
+  height        Int?
+  duration      Int?
   synapseMxcUri String?
-  createdAt  DateTime @default(now())
+  createdAt     DateTime @default(now())
 }
 
 model GuildProfile {
-  guildId    String @unique
-  matrixSpaceId String? @unique
-  topic String?
-  isPrivate Boolean @default(false)
-  maxMembers Int?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  channels   ChannelProfile[]
+  guildId       String   @unique
+  matrixSpaceId String?  @unique
+  name          String?
+  description   String?
+  topic         String?
+  avatarUrl     String?
+  bannerUrl     String?
+  createdBy     String?
+  isPrivate     Boolean  @default(false)
+  maxMembers    Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  channels      ChannelProfile[]
+  invites       GuildInvite[]
 }
 
 model ChannelProfile {
-  id         String @id @default(cuid())
-  guildId    String
-  matrixRoomId String @unique
-  name       String
-  topic      String?
-  type       String @default("text")
-  category   String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id           String   @id @default(cuid())
+  guildId      String
+  matrixRoomId String   @unique
+  name         String
+  topic        String?
+  type         String   @default("text")
+  category     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  guild      GuildProfile @relation(fields: [guildId], references: [guildId])
+  guild        GuildProfile @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+}
+
+model GuildInvite {
+  id        String       @id @default(cuid())
+  code      String       @unique
+  guildId   String
+  creatorId String
+  maxUses   Int?
+  usesCount Int          @default(0)
+  expiresAt DateTime?
+  createdAt DateTime     @default(now())
+
+  guild     GuildProfile @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@index([code])
+  @@index([guildId])
 }

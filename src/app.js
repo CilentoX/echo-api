@@ -6,6 +6,7 @@ import { handleSyncProxy } from './lib/matrix/syncProxy.js'
 import { registerAuthRoutes } from './routes/authRoutes.js'
 import { registerMessageRoutes } from './routes/messageRoutes.js'
 import { registerUserProfileRoutes } from './routes/userProfileRoutes.js'
+import { registerGuildRoutes } from './routes/guildRoutes.js'
 import { guildProfileRoutes } from './routes/guildProfileRoutes.js'
 import { registerMemberRoutes } from './routes/memberRoutes.js'
 import { registerChatMediaRoutes } from './routes/chatMediaRoutes.js'
@@ -110,6 +111,7 @@ registerAuthRoutes(app)
  */
 registerMessageRoutes(app)
 registerUserProfileRoutes(app)
+registerGuildRoutes(app)
 app.register(guildProfileRoutes, { prefix: '/api/guilds' })
 registerMemberRoutes(app)
 registerChatMediaRoutes(app)

@@ -1,4 +1,3 @@
-import Fastify from 'fastify'
 import { authenticate } from '../plugins/auth.js'
 import { getMatrixClient } from '../lib/matrix/client.js'
 
@@ -17,19 +16,13 @@ export function registerMemberRoutes(app) {
   /**
    * GET /api/rooms/:roomId/members
    * Lists joined members of a room using the Matrix client.
-   * Expects authentication via request.user.accessToken.
-   *
-   * @param {object} request - Fastify request object
-   * @param {object} reply - Fastify reply object
-   * @returns {void}
+   * Normalizes the response into an array of { userId, displayName, avatarUrl, presence }.
    */
   app.get(
     '/api/rooms/:roomId/members',
-    {},
-    authenticate,
+    { preHandler: authenticate },
     async (request, reply) => {
       const { roomId } = request.params
-      const userId = request.query.userId
       const accessToken = request.user?.accessToken
 
       if (!accessToken) {
@@ -39,8 +32,15 @@ export function registerMemberRoutes(app) {
 
       try {
         const matrixClient = await getMatrixClient(request.user.userId, accessToken)
-        const members = await matrixClient.getJoinedRoomMembers(roomId)
-        reply.send(members)
+        const membersData = await matrixClient.getJoinedRoomMembers(roomId)
+        const joined = membersData?.joined || {}
+        const result = Object.entries(joined).map(([userId, data]) => ({
+          userId,
+          displayName: data?.display_name || userId.replace(/^@/, '').split(':')[0],
+          avatarUrl: data?.avatar_url || null,
+          presence: 'online',
+        }))
+        reply.send(result)
       } catch (error) {
         reply.code(500).send({ error: error.message })
       }
@@ -50,20 +50,13 @@ export function registerMemberRoutes(app) {
   /**
    * POST /api/rooms/:roomId/invite
    * Invites a user to a room.
-   * Expects authentication via request.user.accessToken.
-   * Body: { userId }
-   *
-   * @param {object} request - Fastify request object
-   * @param {object} reply - Fastify reply object
-   * @returns {void}
    */
   app.post(
     '/api/rooms/:roomId/invite',
-    {},
-    authenticate,
+    { preHandler: authenticate },
     async (request, reply) => {
       const { roomId } = request.params
-      const { userId } = request.body
+      const { userId } = request.body || {}
       const accessToken = request.user?.accessToken
 
       if (!accessToken) {
@@ -89,20 +82,13 @@ export function registerMemberRoutes(app) {
   /**
    * POST /api/rooms/:roomId/kick
    * Kicks a user from a room.
-   * Expects authentication via request.user.accessToken.
-   * Body: { userId, reason? }
-   *
-   * @param {object} request - Fastify request object
-   * @param {object} reply - Fastify reply object
-   * @returns {void}
    */
   app.post(
     '/api/rooms/:roomId/kick',
-    {},
-    authenticate,
+    { preHandler: authenticate },
     async (request, reply) => {
       const { roomId } = request.params
-      const { userId, reason } = request.body
+      const { userId, reason } = request.body || {}
       const accessToken = request.user?.accessToken
 
       if (!accessToken) {
@@ -128,20 +114,13 @@ export function registerMemberRoutes(app) {
   /**
    * POST /api/rooms/:roomId/ban
    * Bans a user from a room.
-   * Expects authentication via request.user.accessToken.
-   * Body: { userId, reason? }
-   *
-   * @param {object} request - Fastify request object
-   * @param {object} reply - Fastify reply object
-   * @returns {void}
    */
   app.post(
     '/api/rooms/:roomId/ban',
-    {},
-    authenticate,
+    { preHandler: authenticate },
     async (request, reply) => {
       const { roomId } = request.params
-      const { userId, reason } = request.body
+      const { userId, reason } = request.body || {}
       const accessToken = request.user?.accessToken
 
       if (!accessToken) {
@@ -167,20 +146,13 @@ export function registerMemberRoutes(app) {
   /**
    * PUT /api/rooms/:roomId/power-levels
    * Sets power levels in a room.
-   * Expects authentication via request.user.accessToken.
-   * Body: { userId, powerLevel }
-   *
-   * @param {object} request - Fastify request object
-   * @param {object} reply - Fastify reply object
-   * @returns {void}
    */
   app.put(
     '/api/rooms/:roomId/power-levels',
-    {},
-    authenticate,
+    { preHandler: authenticate },
     async (request, reply) => {
       const { roomId } = request.params
-      const { userId, powerLevel } = request.body
+      const { userId, powerLevel } = request.body || {}
       const accessToken = request.user?.accessToken
 
       if (!accessToken) {
