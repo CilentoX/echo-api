@@ -42,6 +42,10 @@ app.addHook('onResponse', (request, reply) => {
   reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key')
 })
 
+// Health check route
+app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))
+app.get('/', async () => ({ message: 'Echo API', version: '1.0.0' }))
+
 /**
  * Matrix proxy route - forwards all /matrix/* requests to Synapse
  *
