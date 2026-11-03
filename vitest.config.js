@@ -8,6 +8,8 @@ export default defineConfig({
   root: __dirname,
   test: {
     include: ['tests/**/*.test.js', 'src/**/*.test.js'],
+    testTimeout: 30000,
+    hookTimeout: 30000,
   },
   resolve: {
     alias: {

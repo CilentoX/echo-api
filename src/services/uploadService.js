@@ -5,12 +5,23 @@ import { v4 as uuidv4 } from 'uuid'
 
 const clients = new Map()
 
+export function getUploadsDir() {
+  if (process.env.UPLOAD_DIR) {
+    return process.env.UPLOAD_DIR
+  }
+  const inSrc = path.join(process.cwd(), 'src', 'uploads')
+  if (fs.existsSync(inSrc)) {
+    return inSrc
+  }
+  return path.join(process.cwd(), 'uploads')
+}
+
 /**
  * Upload service - provides saveFile and deleteFile for upload routes.
  */
 export async function saveFile(file) {
   const mediaId = uuidv4()
-  const uploadsDir = path.join(process.cwd(), 'uploads')
+  const uploadsDir = getUploadsDir()
   const filePath = path.join(uploadsDir, `${mediaId}.file`)
   const metaPath = path.join(uploadsDir, `${mediaId}.meta.json`)
 
@@ -50,8 +61,9 @@ export async function saveFile(file) {
 }
 
 export async function deleteFile(fileId) {
-  const filePath = path.join(process.cwd(), 'uploads', `${fileId}.file`)
-  const metaPath = path.join(process.cwd(), 'uploads', `${fileId}.meta.json`)
+  const uploadsDir = getUploadsDir()
+  const filePath = path.join(uploadsDir, `${fileId}.file`)
+  const metaPath = path.join(uploadsDir, `${fileId}.meta.json`)
   let deleted = false
   if (fs.existsSync(filePath)) {
     fs.unlinkSync(filePath)

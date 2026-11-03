@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import uploadService, { saveFile, deleteFile } from "../services/uploadService.js";
+import uploadService, { saveFile, deleteFile, getUploadsDir } from "../services/uploadService.js";
 
 export async function uploadRoutes(fastify, opts) {
   // POST /api/upload e /api/upload/
@@ -31,8 +31,9 @@ export async function uploadRoutes(fastify, opts) {
     async (request, reply) => {
       const { fileId } = request.params;
       const cleanId = path.basename(fileId).replace(/\.file$/, "");
-      const filePath = path.join(process.cwd(), "uploads", `${cleanId}.file`);
-      const metaPath = path.join(process.cwd(), "uploads", `${cleanId}.meta.json`);
+      const uploadsDir = getUploadsDir();
+      const filePath = path.join(uploadsDir, `${cleanId}.file`);
+      const metaPath = path.join(uploadsDir, `${cleanId}.meta.json`);
 
       if (!fs.existsSync(filePath)) {
         return reply.status(404).send({ error: "Arquivo não encontrado" });
