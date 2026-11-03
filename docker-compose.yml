@@ -1,5 +1,5 @@
 # Echo API — Docker Compose (Coolify Production)
-# Deploys Fastify + Prisma API conectando no PostgreSQL do Synapse via rede coolify.
+# Deploys Fastify + Prisma API conectando no PostgreSQL dedicado (echo_api) via rede coolify.
 #
 # Variáveis de ambiente obrigatórias (definir no Coolify):
 #   ECHO_API_DB_PASSWORD      — Senha do PostgreSQL (mesma do Synapse)
@@ -18,8 +18,8 @@ services:
     environment:
       PORT: 3001
       NODE_ENV: production
-      # Conecta no PostgreSQL do Synapse via rede coolify (database 'synapse')
-      DATABASE_URL: postgresql://synapse:${ECHO_API_DB_PASSWORD?ECHO_API_DB_PASSWORD is required}@echo-postgres:5432/synapse?schema=public
+      # Conecta no PostgreSQL dedicado (echo_api) via rede coolify
+      DATABASE_URL: postgresql://synapse:${ECHO_API_DB_PASSWORD?ECHO_API_DB_PASSWORD is required}@echo-postgres:5432/echo_api?schema=public
       API_KEY: ${ECHO_API_API_KEY?ECHO_API_API_KEY is required}
       UPLOAD_DIR: /app/src/uploads
       MAX_FILE_SIZE: 10485760
