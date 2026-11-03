@@ -41,7 +41,7 @@ vi.mock("uuid", () => ({
 describe("uploadService.saveFile", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.PUBLIC_BASE_URL = "https://api.echo.litteris.online";
+    process.env.PUBLIC_BASE_URL = "https://echo-api.litteris.online";
   });
 
   afterEach(() => {
