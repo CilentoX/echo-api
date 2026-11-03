@@ -50,8 +50,8 @@ app.addHook('onRequest', async (request, reply) => {
     const corsOrigin = getCorsOrigin(request)
     reply
       .header('Access-Control-Allow-Origin', corsOrigin)
-      .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
-      .header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key')
+      .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD')
+      .header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, x-matrix-auth, X-Requested-With, Range')
       .header('Access-Control-Allow-Credentials', 'true')
       .code(204)
       .send()
@@ -62,8 +62,8 @@ app.addHook('onRequest', async (request, reply) => {
 app.addHook('onResponse', (request, reply) => {
   const corsOrigin = getCorsOrigin(request)
   reply.header('Access-Control-Allow-Origin', corsOrigin)
-  reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
-  reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key')
+  reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD')
+  reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, x-matrix-auth, X-Requested-With, Range')
   reply.header('Access-Control-Allow-Credentials', 'true')
 })
 
