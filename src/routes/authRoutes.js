@@ -80,14 +80,16 @@ export function registerAuthRoutes(app) {
   /**
    * POST /auth/token
    * Desktop exchanges code for tokens (alternative to callback).
-   * Expects { code } in the request body.
+   * Expects { code } in the request body (or query fallback).
    *
    * @param {object} request - Fastify request object (expected to have body: { code })
    * @param {object} reply - Fastify reply object
    * @returns {void}
    */
   app.post('/auth/token', async (request, reply) => {
-    const { code } = request.body
+    const body = request.body || {}
+    const query = request.query || {}
+    const code = body.code || query.code
 
     if (!code) {
       reply.code(400).send({ error: 'code body parameter is required' })
@@ -95,9 +97,8 @@ export function registerAuthRoutes(app) {
     }
 
     try {
-      // Get state from query or generate a default for this flow
-      // In a real implementation, the state would be retrieved from cache
-      const state = request.query.state || 'default-state'
+      // Get state from query, body, or generate a default for this flow
+      const state = query.state || body.state || 'default-state'
       const prisma = typeof request.prisma === 'function' ? request.prisma() : null
 
       const tokens = await exchangeCodeForTokens(code, state, prisma)
@@ -118,7 +119,9 @@ export function registerAuthRoutes(app) {
    * @returns {void}
    */
   app.post('/auth/refresh', async (request, reply) => {
-    const { refreshToken } = request.body
+    const body = request.body || {}
+    const query = request.query || {}
+    const refreshToken = body.refreshToken || query.refreshToken
 
     if (!refreshToken) {
       reply.code(400).send({ error: 'refreshToken body parameter is required' })
@@ -129,7 +132,6 @@ export function registerAuthRoutes(app) {
       // In a real implementation, this would call Synapse's token refresh endpoint
       // or use the jose library to refresh the token
       // For now, we return a mock response
-
       const newAccessToken = `new-access-token-${Date.now()}`
       const newRefreshToken = refreshToken
 
