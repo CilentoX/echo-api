@@ -74,14 +74,15 @@ app.get('/', async () => ({ message: 'Echo API', version: '1.0.0' }))
  */
 app.route({
   method: ['GET', 'POST', 'PUT', 'DELETE'],
-  url: '/matrix/:matrixPath*',
+  url: '/matrix/*',
   handler: async (request, reply) => {
     if (!request.user || !request.user.accessToken) {
       reply.code(401).send({ error: 'Unauthorized: no access token' })
       return
     }
 
-    await proxyToMatrix(request, reply, request.params.matrixPath)
+    const matrixPath = request.params['*'] || ''
+    await proxyToMatrix(request, reply, matrixPath)
   },
 })
 
