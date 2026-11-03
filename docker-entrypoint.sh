@@ -1,6 +1,8 @@
 #!/bin/sh
-# Entrpoint: inicia a API diretamente.
-# O Prisma/lazy connection lida com o banco na primeira requisição.
+# Entrypoint: roda migrações Prisma e inicia a aplicação
+
+echo "=== Entrypoint: rodando migrações Prisma ==="
+npx prisma migrate deploy
 
 echo "=== Entrypoint: iniciando a aplicação ==="
 exec node dist/server.js
