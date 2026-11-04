@@ -362,9 +362,12 @@ export const guildProfileService = {
       },
     })
 
+    const baseUrl = process.env.PUBLIC_INVITE_URL || process.env.PUBLIC_BASE_URL || 'https://echo-api.litteris.online'
+    const cleanBaseUrl = baseUrl.replace(/\/+$/, '')
+
     return {
       code: invite.code,
-      url: `https://echo.litteris.online/invite/${invite.code}`,
+      url: `${cleanBaseUrl}/invite/${invite.code}`,
       maxUses: invite.maxUses,
       usesCount: invite.usesCount,
       expiresAt: invite.expiresAt,
@@ -467,5 +470,161 @@ export const guildProfileService = {
       guildId: invite.guildId,
       name: invite.guild?.name || 'Guilda',
     }
+  },
+
+  /**
+   * List all invites for a guild.
+   */
+  async listGuildInvites(guildId) {
+    const invites = await prisma.guildInvite.findMany({
+      where: { guildId },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    const baseUrl = process.env.PUBLIC_INVITE_URL || process.env.PUBLIC_BASE_URL || 'https://echo-api.litteris.online'
+    const cleanBaseUrl = baseUrl.replace(/\/+$/, '')
+
+    return invites.map((inv) => ({
+      ...inv,
+      url: `${cleanBaseUrl}/invite/${inv.code}`,
+    }))
+  },
+
+  /**
+   * Delete/revoke an invite.
+   */
+  async deleteGuildInvite(guildId, inviteId) {
+    await prisma.guildInvite.deleteMany({
+      where: {
+        id: inviteId,
+        guildId,
+      },
+    })
+    return { success: true }
+  },
+
+  /**
+   * List all roles in a guild.
+   */
+  async getGuildRoles(guildId) {
+    return prisma.guildRole.findMany({
+      where: { guildId },
+      orderBy: { position: 'asc' },
+    })
+  },
+
+  /**
+   * Create a new role in a guild.
+   */
+  async createGuildRole(guildId, { name, color, position = 0, isHoisted = false, permissions = [] }) {
+    return prisma.guildRole.create({
+      data: {
+        guildId,
+        name: name || 'Novo Cargo',
+        color: color || '#94a3b8',
+        position: Number(position) || 0,
+        isHoisted: Boolean(isHoisted),
+        permissions: Array.isArray(permissions) ? permissions : [],
+      },
+    })
+  },
+
+  /**
+   * Update a role.
+   */
+  async updateGuildRole(guildId, roleId, data) {
+    const updateData = {}
+    if (data.name !== undefined) updateData.name = data.name
+    if (data.color !== undefined) updateData.color = data.color
+    if (data.position !== undefined) updateData.position = Number(data.position)
+    if (data.isHoisted !== undefined) updateData.isHoisted = Boolean(data.isHoisted)
+    if (data.permissions !== undefined) {
+      updateData.permissions = Array.isArray(data.permissions) ? data.permissions : []
+    }
+
+    return prisma.guildRole.update({
+      where: { id: roleId },
+      data: updateData,
+    })
+  },
+
+  /**
+   * Delete a role.
+   */
+  async deleteGuildRole(guildId, roleId) {
+    await prisma.guildRole.deleteMany({
+      where: { id: roleId, guildId },
+    })
+    return { success: true }
+  },
+
+  /**
+   * Get members data for a guild (roles, custom nicknames).
+   */
+  async getGuildMembersData(guildId) {
+    const [roles, memberRoles, memberProfiles] = await Promise.all([
+      prisma.guildRole.findMany({ where: { guildId } }),
+      prisma.guildMemberRole.findMany({ where: { guildId } }),
+      prisma.guildMemberProfile.findMany({ where: { guildId } }),
+    ])
+
+    return {
+      roles,
+      memberRoles,
+      memberProfiles,
+    }
+  },
+
+  /**
+   * Set or update a member's nickname specifically inside a guild.
+   */
+  async setGuildMemberNickname(guildId, userId, nickname) {
+    const cleanNick = typeof nickname === 'string' ? nickname.trim() : null
+    const profile = await prisma.guildMemberProfile.upsert({
+      where: {
+        guildId_userId: { guildId, userId },
+      },
+      update: {
+        nickname: cleanNick || null,
+      },
+      create: {
+        guildId,
+        userId,
+        nickname: cleanNick || null,
+      },
+    })
+    return profile
+  },
+
+  /**
+   * Assign a role to a member in a guild.
+   */
+  async assignGuildMemberRole(guildId, userId, roleId) {
+    const memberRole = await prisma.guildMemberRole.upsert({
+      where: {
+        guildId_userId_roleId: { guildId, userId, roleId },
+      },
+      update: {},
+      create: {
+        guildId,
+        userId,
+        roleId,
+      },
+    })
+    return memberRole
+  },
+
+  /**
+   * Remove a role from a member in a guild.
+   */
+  async removeGuildMemberRole(guildId, userId, roleId) {
+    await prisma.guildMemberRole.deleteMany({
+      where: {
+        guildId,
+        userId,
+        roleId,
+      },
+    })
+    return { success: true }
   },
 }

@@ -19,7 +19,8 @@ model UserToken {
 
 model UserProfile {
   userId    String  @unique
-  nickname  String? @unique
+  username  String? @unique
+  nickname  String?
   avatarUrl String?
   bannerUrl String?
   bio       String?
@@ -56,6 +57,8 @@ model GuildProfile {
   updatedAt     DateTime @updatedAt
   channels      ChannelProfile[]
   invites       GuildInvite[]
+  roles         GuildRole[]
+  memberProfiles GuildMemberProfile[]
 }
 
 model ChannelProfile {
@@ -103,4 +106,51 @@ model Friendship {
   @@index([addresseeId])
   @@index([status])
 }
+
+model GuildRole {
+  id          String   @id @default(cuid())
+  guildId     String
+  name        String
+  color       String?  // hex code e.g. "#0FB9A8"
+  position    Int      @default(0)
+  isHoisted   Boolean  @default(false)
+  permissions Json     @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  guild       GuildProfile @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  memberRoles GuildMemberRole[]
+
+  @@index([guildId])
+}
+
+model GuildMemberRole {
+  id        String    @id @default(cuid())
+  guildId   String
+  userId    String
+  roleId    String
+  createdAt DateTime  @default(now())
+
+  role      GuildRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, userId, roleId])
+  @@index([guildId, userId])
+}
+
+model GuildMemberProfile {
+  id        String   @id @default(cuid())
+  guildId   String
+  userId    String
+  nickname  String?
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guild     GuildProfile @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@unique([guildId, userId])
+  @@index([guildId])
+  @@index([userId])
+}
+
 

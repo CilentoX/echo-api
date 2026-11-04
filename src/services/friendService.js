@@ -5,11 +5,14 @@ import { getMatrixClient } from '../lib/matrix/client.js'
  * Normaliza e busca o perfil de um usuário para exibição em listas de amizade.
  */
 function formatUserProfile(userId, profile) {
-  const fallbackName = userId ? userId.replace(/^@/, '').split(':')[0] : 'Usuário'
+  const fallbackUsername = userId ? userId.replace(/^@/, '').split(':')[0] : 'usuario'
+  const username = profile?.username || fallbackUsername
+  const displayName = profile?.nickname || profile?.displayName || username
   return {
     userId,
+    username,
     nickname: profile?.nickname || null,
-    displayName: profile?.nickname || fallbackName,
+    displayName,
     avatarUrl: profile?.avatarUrl || null,
     bio: profile?.bio || null,
   }
@@ -125,9 +128,16 @@ export async function sendFriendRequest(requesterId, targetInput, db = prisma) {
   if (trimmed.startsWith('@') && trimmed.includes(':')) {
     targetUserId = trimmed
   } else {
-    // Procura por nickname
+    // Procura por username ou nickname
+    const cleanHandle = trimmed.replace(/^@/, '').toLowerCase()
     const profile = await db.userProfile.findFirst({
-      where: { nickname: trimmed },
+      where: {
+        OR: [
+          { username: cleanHandle },
+          { username: trimmed },
+          { nickname: trimmed },
+        ],
+      },
     })
 
     if (profile) {
@@ -651,6 +661,7 @@ export async function discoverUsers(userId, options = {}, db = prisma) {
 
     results.push({
       userId: candidateId,
+      username: formatted.username,
       displayName,
       nickname: formatted.nickname,
       avatarUrl,

@@ -163,20 +163,119 @@ export function registerGuildRoutes(app) {
   app.post('/guilds/:guildId/invites', { preHandler: authenticate }, handleCreateInvite)
   app.post('/api/guilds/:guildId/invites', { preHandler: authenticate }, handleCreateInvite)
 
+  const renderInviteHtml = (preview, error = null) => {
+    if (error) {
+      return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Convite Echo - Inválido</title>
+  <style>
+    body { margin: 0; background: #0b0e14; color: #e1e7ec; font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; box-sizing: border-box; }
+    .card { background: #12161f; border: 1px solid rgba(255,255,255,0.08); border-radius: 24px; padding: 36px 28px; max-width: 400px; width: 100%; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.6); }
+    .badge { width: 48px; height: 48px; border-radius: 16px; background: rgba(239, 68, 68, 0.1); color: #ef4444; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; font-size: 22px; font-weight: bold; }
+    h1 { font-size: 18px; margin: 0 0 8px; color: #fff; }
+    p { font-size: 13px; color: #94a3b8; margin: 0 0 24px; line-height: 1.5; }
+    .btn { display: inline-block; background: #0FB9A8; color: #0b0e14; font-weight: 700; text-decoration: none; padding: 12px 24px; border-radius: 12px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">✕</div>
+    <h1>Convite Inválido ou Expirado</h1>
+    <p>${error}</p>
+    <a href="https://echo.litteris.online" class="btn">Conhecer o Echo</a>
+  </div>
+</body>
+</html>`
+    }
+
+    const { name, description, avatarUrl, bannerUrl, channelsCount, code } = preview
+    const title = `Você foi convidado para participar de ${name} no Echo`
+    const desc = description || `Participe de ${name} e converse em tempo real por texto, voz e vídeo no Echo.`
+
+    return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${name} - Convite Echo</title>
+  <meta property="og:title" content="${title}">
+  <meta property="og:description" content="${desc}">
+  ${avatarUrl ? `<meta property="og:image" content="${avatarUrl}">` : ''}
+  <style>
+    body { margin: 0; background: #0b0e14; color: #e1e7ec; font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; box-sizing: border-box; }
+    .card { background: #12161f; border: 1px solid rgba(255,255,255,0.08); border-radius: 24px; overflow: hidden; width: 100%; max-width: 440px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); position: relative; }
+    .banner { height: 120px; background: ${bannerUrl ? `url('${bannerUrl}') center/cover no-repeat` : 'linear-gradient(135deg, rgba(49,46,129,0.7), rgba(88,28,135,0.5), #0b0e14)'}; position: relative; }
+    .banner::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, #12161f, transparent); }
+    .content { padding: 0 28px 28px; position: relative; text-align: center; }
+    .avatar-wrapper { margin: -40px auto 16px; width: 72px; height: 72px; border-radius: 20px; border: 4px solid #12161f; background: #161c28; overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; color: #0FB9A8; box-shadow: 0 10px 20px rgba(0,0,0,0.3); }
+    .avatar-img { width: 100%; height: 100%; object-fit: cover; }
+    .invite-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #0FB9A8; font-weight: 700; margin-bottom: 6px; }
+    h1 { font-size: 22px; font-weight: 700; margin: 0 0 8px; color: #fff; }
+    .desc { font-size: 13px; color: #94a3b8; margin: 0 0 20px; line-height: 1.5; }
+    .stats { display: flex; justify-content: center; gap: 16px; margin-bottom: 24px; font-size: 12px; color: #64748b; font-weight: 500; }
+    .stats span { display: flex; align-items: center; gap: 4px; }
+    .stats strong { color: #0FB9A8; }
+    .btn-primary { display: block; background: #0FB9A8; color: #0b0e14; font-weight: 700; text-decoration: none; padding: 14px 24px; border-radius: 14px; font-size: 15px; box-shadow: 0 8px 20px rgba(15,185,168,0.25); cursor: pointer; border: none; width: 100%; box-sizing: border-box; }
+    .btn-primary:active { transform: scale(0.98); }
+    .code-box { margin-top: 16px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 10px 14px; font-size: 12px; color: #94a3b8; display: flex; align-items: center; justify-content: space-between; }
+    .code-val { font-family: monospace; color: #fff; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="banner"></div>
+    <div class="content">
+      <div class="avatar-wrapper">
+        ${avatarUrl ? `<img src="${avatarUrl}" class="avatar-img" alt="${name}"/>` : (name[0] || 'G').toUpperCase()}
+      </div>
+      <div class="invite-label">Você foi convidado para entrar</div>
+      <h1>${name}</h1>
+      ${desc ? `<p class="desc">${desc}</p>` : ''}
+      <div class="stats">
+        <span>● <strong>${channelsCount || 1}</strong> ${channelsCount === 1 ? 'canal' : 'canais'}</span>
+        <span>🛡️ Comunidade Echo</span>
+      </div>
+      <a href="echo://invite/${code}" class="btn-primary" onclick="window.location.href='echo://invite/${code}';">Entrar no Echo</a>
+      <div class="code-box">
+        <span>Código do convite:</span>
+        <span class="code-val">${code}</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`
+  }
+
   const handleGetInvite = async (request, reply) => {
+    const acceptsHtml = Boolean(request.headers.accept?.includes('text/html'))
+    const acceptsJson = Boolean(request.headers.accept?.includes('application/json'))
+    const isHtml = acceptsHtml && !acceptsJson
     try {
       const { code } = request.params
       const result = await guildProfileService.getInvitePreview(code)
       if (result.error) {
+        if (isHtml) {
+          return reply.code(result.status || 400).type('text/html').send(renderInviteHtml(null, result.error))
+        }
         return reply.code(result.status || 400).send({ error: result.error })
+      }
+      if (isHtml) {
+        return reply.code(200).type('text/html').send(renderInviteHtml(result))
       }
       return reply.code(200).send(result)
     } catch (err) {
       request.log.error(err)
+      if (isHtml) {
+        return reply.code(500).type('text/html').send(renderInviteHtml(null, 'Erro ao consultar convite'))
+      }
       return reply.code(500).send({ error: 'Erro ao consultar convite' })
     }
   }
 
+  app.get('/invite/:code', handleGetInvite)
   app.get('/invites/:code', handleGetInvite)
   app.get('/api/invites/:code', handleGetInvite)
 
@@ -200,5 +299,145 @@ export function registerGuildRoutes(app) {
 
   app.post('/invites/:code/join', { preHandler: authenticate }, handleJoinInvite)
   app.post('/api/invites/:code/join', { preHandler: authenticate }, handleJoinInvite)
+
+  // Invites management
+  const handleListInvites = async (request, reply) => {
+    try {
+      const { guildId } = request.params
+      const invites = await guildProfileService.listGuildInvites(guildId)
+      return reply.code(200).send(invites)
+    } catch (err) {
+      request.log.error(err)
+      return reply.code(500).send({ error: 'Erro ao listar convites' })
+    }
+  }
+
+  const handleDeleteInvite = async (request, reply) => {
+    try {
+      const { guildId, inviteId } = request.params
+      await guildProfileService.deleteGuildInvite(guildId, inviteId)
+      return reply.code(200).send({ success: true })
+    } catch (err) {
+      request.log.error(err)
+      return reply.code(500).send({ error: 'Erro ao remover convite' })
+    }
+  }
+
+  app.get('/guilds/:guildId/invites', { preHandler: authenticate }, handleListInvites)
+  app.get('/api/guilds/:guildId/invites', { preHandler: authenticate }, handleListInvites)
+  app.delete('/guilds/:guildId/invites/:inviteId', { preHandler: authenticate }, handleDeleteInvite)
+  app.delete('/api/guilds/:guildId/invites/:inviteId', { preHandler: authenticate }, handleDeleteInvite)
+
+  // Roles management
+  const handleGetRoles = async (request, reply) => {
+    try {
+      const { guildId } = request.params
+      const roles = await guildProfileService.getGuildRoles(guildId)
+      return reply.code(200).send(roles)
+    } catch (err) {
+      request.log.error(err)
+      return reply.code(500).send({ error: 'Erro ao listar cargos' })
+    }
+  }
+
+  const handleCreateRole = async (request, reply) => {
+    try {
+      const { guildId } = request.params
+      const role = await guildProfileService.createGuildRole(guildId, request.body || {})
+      return reply.code(201).send(role)
+    } catch (err) {
+      request.log.error(err)
+      return reply.code(500).send({ error: 'Erro ao criar cargo' })
+    }
+  }
+
+  const handleUpdateRole = async (request, reply) => {
+    try {
+      const { guildId, roleId } = request.params
+      const role = await guildProfileService.updateGuildRole(guildId, roleId, request.body || {})
+      return reply.code(200).send(role)
+    } catch (err) {
+      request.log.error(err)
+      return reply.code(500).send({ error: 'Erro ao atualizar cargo' })
+    }
+  }
+
+  const handleDeleteRole = async (request, reply) => {
+    try {
+      const { guildId, roleId } = request.params
+      await guildProfileService.deleteGuildRole(guildId, roleId)
+      return reply.code(200).send({ success: true })
+    } catch (err) {
+      request.log.error(err)
+      return reply.code(500).send({ error: 'Erro ao excluir cargo' })
+    }
+  }
+
+  app.get('/guilds/:guildId/roles', { preHandler: authenticate }, handleGetRoles)
+  app.get('/api/guilds/:guildId/roles', { preHandler: authenticate }, handleGetRoles)
+  app.post('/guilds/:guildId/roles', { preHandler: authenticate }, handleCreateRole)
+  app.post('/api/guilds/:guildId/roles', { preHandler: authenticate }, handleCreateRole)
+  app.patch('/guilds/:guildId/roles/:roleId', { preHandler: authenticate }, handleUpdateRole)
+  app.patch('/api/guilds/:guildId/roles/:roleId', { preHandler: authenticate }, handleUpdateRole)
+  app.delete('/guilds/:guildId/roles/:roleId', { preHandler: authenticate }, handleDeleteRole)
+  app.delete('/api/guilds/:guildId/roles/:roleId', { preHandler: authenticate }, handleDeleteRole)
+
+  // Members data (roles and server nicknames)
+  const handleGetMembersData = async (request, reply) => {
+    try {
+      const { guildId } = request.params
+      const data = await guildProfileService.getGuildMembersData(guildId)
+      return reply.code(200).send(data)
+    } catch (err) {
+      request.log.error(err)
+      return reply.code(500).send({ error: 'Erro ao carregar dados dos membros' })
+    }
+  }
+
+  const handleSetMyNickname = async (request, reply) => {
+    try {
+      const { guildId } = request.params
+      const { nickname } = request.body || {}
+      const profile = await guildProfileService.setGuildMemberNickname(guildId, request.user.userId, nickname)
+      return reply.code(200).send(profile)
+    } catch (err) {
+      request.log.error(err)
+      return reply.code(500).send({ error: 'Erro ao definir apelido' })
+    }
+  }
+
+  const handleAssignMemberRole = async (request, reply) => {
+    try {
+      const { guildId, targetUserId, roleId } = request.params
+      const result = await guildProfileService.assignGuildMemberRole(guildId, targetUserId, roleId)
+      return reply.code(200).send(result)
+    } catch (err) {
+      request.log.error(err)
+      return reply.code(500).send({ error: 'Erro ao atribuir cargo' })
+    }
+  }
+
+  const handleRemoveMemberRole = async (request, reply) => {
+    try {
+      const { guildId, targetUserId, roleId } = request.params
+      await guildProfileService.removeGuildMemberRole(guildId, targetUserId, roleId)
+      return reply.code(200).send({ success: true })
+    } catch (err) {
+      request.log.error(err)
+      return reply.code(500).send({ error: 'Erro ao remover cargo' })
+    }
+  }
+
+  app.get('/guilds/:guildId/members-data', { preHandler: authenticate }, handleGetMembersData)
+  app.get('/api/guilds/:guildId/members-data', { preHandler: authenticate }, handleGetMembersData)
+
+  app.put('/guilds/:guildId/members/me/nickname', { preHandler: authenticate }, handleSetMyNickname)
+  app.put('/api/guilds/:guildId/members/me/nickname', { preHandler: authenticate }, handleSetMyNickname)
+
+  app.post('/guilds/:guildId/members/:targetUserId/roles/:roleId', { preHandler: authenticate }, handleAssignMemberRole)
+  app.post('/api/guilds/:guildId/members/:targetUserId/roles/:roleId', { preHandler: authenticate }, handleAssignMemberRole)
+
+  app.delete('/guilds/:guildId/members/:targetUserId/roles/:roleId', { preHandler: authenticate }, handleRemoveMemberRole)
+  app.delete('/api/guilds/:guildId/members/:targetUserId/roles/:roleId', { preHandler: authenticate }, handleRemoveMemberRole)
 }
 

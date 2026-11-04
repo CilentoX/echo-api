@@ -2,6 +2,30 @@ import { prisma } from '../db.js'
 import { syncDisplayNameToMatrix } from '../lib/matrix/profileSync.js'
 
 /**
+ * Validates a username string.
+ * - Must be 3-32 characters, lowercase alphanumeric, underscore, dot or hyphen.
+ *
+ * @param {string} username - The username to validate
+ * @returns {boolean} true if the username is valid
+ */
+export function isValidUsername(username) {
+  if (username === undefined || username === null) {
+    return true
+  }
+
+  if (typeof username !== 'string') {
+    return false
+  }
+
+  const clean = username.trim().toLowerCase()
+  if (clean.length < 3 || clean.length > 32) {
+    return false
+  }
+
+  return /^[a-z0-9_.-]+$/.test(clean)
+}
+
+/**
  * Validates a nickname string.
  * - Must be 1-32 characters if provided
  * - Must not contain control characters
@@ -119,6 +143,7 @@ export async function getProfile(userId) {
 export async function updateProfile(userId, data = {}, accessToken = null) {
   const { avatarUrl, bannerUrl, bio, links } = data
   const nickname = data.nickname !== undefined ? data.nickname : data.displayName
+  const username = data.username !== undefined ? (typeof data.username === 'string' ? data.username.trim().toLowerCase() : null) : undefined
 
   if (nickname !== undefined && !isValidNickname(nickname)) {
     throw new Error(
@@ -132,6 +157,26 @@ export async function updateProfile(userId, data = {}, accessToken = null) {
   if (bannerUrl !== undefined) updateData.bannerUrl = bannerUrl
   if (bio !== undefined) updateData.bio = bio
   if (links !== undefined) updateData.links = links
+
+  if (username !== undefined && username !== null && username !== '') {
+    if (!isValidUsername(username)) {
+      throw new Error(
+        'Username inválido: use 3 a 32 caracteres (letras, números, _ ou .)'
+      )
+    }
+    const existing = await prisma.userProfile.findFirst({
+      where: {
+        username,
+        NOT: { userId },
+      },
+    })
+    if (existing) {
+      throw new Error('Este username já está em uso')
+    }
+    updateData.username = username
+  } else if (username === '') {
+    updateData.username = null
+  }
 
   const updatedProfile = await prisma.userProfile.upsert({
     where: { userId },
