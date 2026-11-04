@@ -1,5 +1,5 @@
-# Echo API — Fastify + Prisma + Node.js 20
-FROM node:20-slim AS base
+# Echo API — Fastify + Prisma + Node.js 22
+FROM node:22-slim AS base
 
 # Instalar dependências do sistema incluindo OpenSSL para o Prisma
 # postgresql-client para pg_isready/psql no entrypoint e curl para healthchecks

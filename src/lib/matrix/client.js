@@ -1,3 +1,4 @@
+import '../../polyfill.js'
 import { createClient } from 'matrix-js-sdk'
 
 const clients = new Map()

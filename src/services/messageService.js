@@ -1,3 +1,4 @@
+import '../polyfill.js'
 import { getMatrixClient } from '../lib/matrix/client.js'
 import { saveChatMedia } from './chatMediaService.js'
 
@@ -27,37 +28,39 @@ export async function sendMessage(roomId, { body, msgtype, mediaId, accessToken,
   }
 
   // Determine the content based on msgtype
+  const effectiveMsgtype = msgtype || 'm.text'
   let content
 
-  switch (msgtype) {
+  switch (effectiveMsgtype) {
     case 'm.text':
-      content = { body }
+      content = { body, msgtype: 'm.text' }
       break
 
     case 'm.file':
     case 'm.image':
     case 'm.audio':
       if (!mxcUri) {
-        throw new Error(`mxcUri required for msgtype ${msgtype}`)
+        throw new Error(`mxcUri required for msgtype ${effectiveMsgtype}`)
       }
       content = {
-        [msgtype]: {
+        [effectiveMsgtype]: {
           url: mxcUri,
           info: {
-            mimetype: media.info?.mimetype || '',
-            size: media.info?.size || 0,
+            mimetype: media?.info?.mimetype || '',
+            size: media?.info?.size || 0,
           },
         },
+        msgtype: effectiveMsgtype,
       }
       // For audio, add duration if available
-      if (msgtype === 'm.audio' && media.info?.duration) {
-        content[msgtype].info.duration = media.info.duration
+      if (effectiveMsgtype === 'm.audio' && media?.info?.duration) {
+        content[effectiveMsgtype].info.duration = media.info.duration
       }
       break
 
     default:
       // Default to text
-      content = { body }
+      content = { body, msgtype: 'm.text' }
       break
   }
 
@@ -65,8 +68,8 @@ export async function sendMessage(roomId, { body, msgtype, mediaId, accessToken,
   // Use sendEvent for media types, sendMessage for text
   let eventId, timestamp
 
-  if (msgtype === 'm.text') {
-    const result = await client.sendMessage(roomId, content, 'm.text')
+  if (effectiveMsgtype === 'm.text') {
+    const result = await client.sendMessage(roomId, content)
     eventId = result.event_id
     timestamp = result.timestamp
   } else {

@@ -1,3 +1,4 @@
+import './polyfill.js'
 import Fastify from 'fastify'
 import multipart from '@fastify/multipart'
 import { PrismaClient } from '@prisma/client'
