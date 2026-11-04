@@ -169,8 +169,8 @@ export async function authenticate(request, reply) {
       return
     }
 
-    // A) Synapse Matrix access token (starts with syt_)
-    if (token.startsWith('syt_')) {
+    // A) Synapse Matrix access token (starts with syt_ or syt-)
+    if (token.startsWith('syt_') || token.startsWith('syt-')) {
       const user = await validateSynapseToken(token)
       if (user) {
         request.user = user
