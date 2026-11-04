@@ -32,7 +32,11 @@ export function registerFriendRoutes(app) {
       const db = getDb(request)
       const query = request.query?.q || request.query?.search || ''
       const limit = request.query?.limit ? parseInt(request.query.limit, 10) : 50
-      const data = await friendService.discoverUsers(request.user.userId, { query, limit }, db)
+      const data = await friendService.discoverUsers(
+        request.user.userId,
+        { query, limit, accessToken: request.user?.accessToken },
+        db
+      )
       return reply.code(200).send(data)
     } catch (err) {
       request.log.error(err)

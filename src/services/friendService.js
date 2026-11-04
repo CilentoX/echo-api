@@ -530,55 +530,135 @@ export async function discoverUsers(userId, options = {}, db = prisma) {
     }
   }
 
-  // 2. Busca todos os usuários de UserToken (ordenados pelos mais recentes)
-  const tokens = await db.userToken.findMany({
-    where: {
-      userId: {
-        not: userId,
-        notIn: Array.from(blockedIds),
-      },
-    },
-    orderBy: { updatedAt: 'desc' },
-    take: limit * 2,
-  })
+  // 2. Busca usuários tanto de UserToken quanto de UserProfile no banco
+  const [tokens, dbProfiles] = await Promise.all([
+    db.userToken?.findMany
+      ? db.userToken.findMany({
+          where: {
+            userId: {
+              not: userId,
+              notIn: Array.from(blockedIds),
+            },
+          },
+          orderBy: { updatedAt: 'desc' },
+          take: limit * 2,
+        })
+      : Promise.resolve([]),
+    db.userProfile?.findMany
+      ? db.userProfile.findMany({
+          where: {
+            userId: {
+              not: userId,
+              notIn: Array.from(blockedIds),
+            },
+          },
+          take: limit * 2,
+        })
+      : Promise.resolve([]),
+  ])
 
-  const userIds = tokens.map((t) => t.userId)
-
-  // 3. Busca perfis de UserProfile
-  const profiles = userIds.length > 0
-    ? await db.userProfile.findMany({
-        where: { userId: { in: userIds } },
+  // 3. Opcionalmente busca usuários no diretório nativo do Matrix Synapse
+  let synapseUsers = []
+  if (options.accessToken) {
+    try {
+      const synapseUrl = process.env.SYNAPSE_URL || 'https://echo.litteris.online'
+      const response = await fetch(`${synapseUrl}/_matrix/client/v3/user_directory/search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${options.accessToken}`,
+        },
+        body: JSON.stringify({
+          search_term: query || ' ',
+          limit: Math.max(limit, 20),
+        }),
       })
-    : []
+      if (response.ok) {
+        const body = await response.json()
+        synapseUsers = body.results || []
+      }
+    } catch {
+      // Ignora falha de rede do Synapse sem interromper o fluxo
+    }
+  }
 
-  const profileMap = new Map(profiles.map((p) => [p.userId, p]))
+  // 4. Consolida todos os IDs únicos preservando os mais recentes primeiro
+  const seenUserIds = new Set()
+  const candidateUserIds = []
+  const tokenMap = new Map()
 
-  // 4. Monta lista consolidada
+  for (const t of tokens) {
+    tokenMap.set(t.userId, t)
+    if (!seenUserIds.has(t.userId)) {
+      seenUserIds.add(t.userId)
+      candidateUserIds.push(t.userId)
+    }
+  }
+
+  for (const p of dbProfiles) {
+    if (!seenUserIds.has(p.userId)) {
+      seenUserIds.add(p.userId)
+      candidateUserIds.push(p.userId)
+    }
+  }
+
+  const synapseMap = new Map()
+  for (const su of synapseUsers) {
+    if (!su.user_id || su.user_id === userId || blockedIds.has(su.user_id)) continue
+    synapseMap.set(su.user_id, su)
+    if (!seenUserIds.has(su.user_id)) {
+      seenUserIds.add(su.user_id)
+      candidateUserIds.push(su.user_id)
+    }
+  }
+
+  // 5. Garante perfis completos de UserProfile
+  const missingProfileIds = candidateUserIds.filter(
+    (id) => !dbProfiles.some((p) => p.userId === id)
+  )
+  let additionalProfiles = []
+  if (missingProfileIds.length > 0 && db.userProfile?.findMany) {
+    additionalProfiles = await db.userProfile.findMany({
+      where: { userId: { in: missingProfileIds } },
+    })
+  }
+
+  const profileMap = new Map(
+    [...dbProfiles, ...additionalProfiles].map((p) => [p.userId, p])
+  )
+
+  // 6. Monta lista consolidada
   const results = []
-  for (const token of tokens) {
-    const profile = profileMap.get(token.userId)
-    const formatted = formatUserProfile(token.userId, profile)
-    const rel = relMap.get(token.userId) || { status: 'none' }
+  for (const candidateId of candidateUserIds) {
+    const profile = profileMap.get(candidateId)
+    const formatted = formatUserProfile(candidateId, profile)
+    const token = tokenMap.get(candidateId)
+    const synapseUser = synapseMap.get(candidateId)
+    const rel = relMap.get(candidateId) || { status: 'none' }
+
+    const displayName = formatted.displayName || synapseUser?.display_name || candidateId
+    const avatarUrl = formatted.avatarUrl || synapseUser?.avatar_url || null
 
     if (query) {
-      const matchUserId = formatted.userId.toLowerCase().includes(query)
+      const matchUserId = candidateId.toLowerCase().includes(query)
       const matchNickname = (formatted.nickname || '').toLowerCase().includes(query)
-      const matchDisplayName = (formatted.displayName || '').toLowerCase().includes(query)
-      if (!matchUserId && !matchNickname && !matchDisplayName) {
+      const matchDisplayName = displayName.toLowerCase().includes(query)
+      const matchBio = (formatted.bio || '').toLowerCase().includes(query)
+      if (!matchUserId && !matchNickname && !matchDisplayName && !matchBio) {
         continue
       }
     }
 
     results.push({
-      userId: formatted.userId,
-      displayName: formatted.displayName,
+      userId: candidateId,
+      displayName,
       nickname: formatted.nickname,
-      avatarUrl: formatted.avatarUrl,
+      avatarUrl,
       bio: formatted.bio,
       status: rel.status,
       friendshipId: rel.friendshipId || null,
       directRoomId: rel.directRoomId || null,
-      joinedAt: token.updatedAt,
+      joinedAt: token?.updatedAt || null,
     })
 
     if (results.length >= limit) {
