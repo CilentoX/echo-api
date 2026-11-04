@@ -59,3 +59,4 @@ describe('Healthcheck Endpoints', () => {
     expect(data.message).toBe('Echo API')
   })
 })
+

@@ -1,12 +1,17 @@
 import Fastify from 'fastify'
-import { sendMessage } from '../services/messageService.js'
-import { editMessage } from '../services/messageService.js'
-import { redactMessage } from '../services/messageService.js'
-import { reactToMessage } from '../services/messageService.js'
+import {
+  sendMessage,
+  editMessage,
+  redactMessage,
+  reactToMessage,
+  getOlderMessages,
+} from '../services/messageService.js'
+import { authenticate } from '../plugins/auth.js'
 
 /**
  * Registers message routes with the Fastify app.
  * Routes:
+ *   GET  /api/rooms/:roomId/messages/older - Load older channel message history
  *   POST /api/rooms/:roomId/messages - Send a message (text, file, image, audio)
  *   PUT /api/rooms/:roomId/messages/:eventId - Edit a message (m.replace)
  *   DELETE /api/rooms/:roomId/messages/:eventId - Redact a message
@@ -15,6 +20,38 @@ import { reactToMessage } from '../services/messageService.js'
  * @returns {void}
  */
 export function registerMessageRoutes(app) {
+  /**
+   * GET /api/rooms/:roomId/messages/older
+   * Loads older messages from Matrix Synapse for a room.
+   */
+  const handleOlderMessages = async (request, reply) => {
+    const { roomId } = request.params
+    const limit = parseInt(request.query?.limit, 10) || 20
+    const from = request.query?.from
+    const userId = request.user?.userId
+    const accessToken = request.user?.accessToken
+
+    if (!userId || !accessToken) {
+      reply.code(401).send({ error: 'Unauthorized: no access token' })
+      return
+    }
+
+    try {
+      const messages = await getOlderMessages(roomId, {
+        limit,
+        from,
+        accessToken,
+        userId,
+      })
+      reply.send(messages)
+    } catch (error) {
+      reply.code(500).send({ error: error.message })
+    }
+  }
+
+  app.get('/api/rooms/:roomId/messages/older', { preHandler: authenticate }, handleOlderMessages)
+  app.get('/rooms/:roomId/messages/older', { preHandler: authenticate }, handleOlderMessages)
+
   /**
    * POST /api/rooms/:roomId/messages
    * Sends a message to a Matrix room.
@@ -28,40 +65,39 @@ export function registerMessageRoutes(app) {
    * @param {object} reply - Fastify reply object
    * @returns {void}
    */
-  app.post(
-    '/api/rooms/:roomId/messages',
-    {},
-    async (request, reply) => {
-      const { roomId } = request.params
-      const { body, msgtype, mediaId } = request.body
-      const userId = request.user?.userId
-      const accessToken = request.user?.accessToken
+  const handleSendMessage = async (request, reply) => {
+    const { roomId } = request.params
+    const { body, msgtype, mediaId } = request.body || {}
+    const userId = request.user?.userId
+    const accessToken = request.user?.accessToken
 
-      if (!userId) {
-        reply.code(401).send({ error: 'Unauthorized: no user ID' })
-        return
-      }
-
-      if (!body) {
-        reply.code(400).send({ error: 'Bad request: no body provided' })
-        return
-      }
-
-      try {
-        const result = await sendMessage(roomId, {
-          body,
-          msgtype,
-          mediaId,
-          accessToken,
-          userId,
-        })
-
-        reply.send(result)
-      } catch (error) {
-        reply.code(500).send({ error: error.message })
-      }
+    if (!userId) {
+      reply.code(401).send({ error: 'Unauthorized: no user ID' })
+      return
     }
-  )
+
+    if (!body) {
+      reply.code(400).send({ error: 'Bad request: no body provided' })
+      return
+    }
+
+    try {
+      const result = await sendMessage(roomId, {
+        body,
+        msgtype,
+        mediaId,
+        accessToken,
+        userId,
+      })
+
+      reply.send(result)
+    } catch (error) {
+      reply.code(500).send({ error: error.message })
+    }
+  }
+
+  app.post('/api/rooms/:roomId/messages', { preHandler: authenticate }, handleSendMessage)
+  app.post('/rooms/:roomId/messages', { preHandler: authenticate }, handleSendMessage)
 
   /**
    * PUT /api/rooms/:roomId/messages/:eventId
@@ -72,38 +108,37 @@ export function registerMessageRoutes(app) {
    * @param {object} reply - Fastify reply object
    * @returns {void}
    */
-  app.put(
-    '/api/rooms/:roomId/messages/:eventId',
-    {},
-    async (request, reply) => {
-      const { roomId, eventId } = request.params
-      const { body } = request.body
-      const userId = request.user?.userId
-      const accessToken = request.user?.accessToken
+  const handleEditMessage = async (request, reply) => {
+    const { roomId, eventId } = request.params
+    const { body } = request.body || {}
+    const userId = request.user?.userId
+    const accessToken = request.user?.accessToken
 
-      if (!userId) {
-        reply.code(401).send({ error: 'Unauthorized: no user ID' })
-        return
-      }
-
-      if (!body) {
-        reply.code(400).send({ error: 'Bad request: no body provided' })
-        return
-      }
-
-      try {
-        const result = await editMessage(roomId, eventId, {
-          body,
-          accessToken,
-          userId,
-        })
-
-        reply.send(result)
-      } catch (error) {
-        reply.code(500).send({ error: error.message })
-      }
+    if (!userId) {
+      reply.code(401).send({ error: 'Unauthorized: no user ID' })
+      return
     }
-  )
+
+    if (!body) {
+      reply.code(400).send({ error: 'Bad request: no body provided' })
+      return
+    }
+
+    try {
+      const result = await editMessage(roomId, eventId, {
+        body,
+        accessToken,
+        userId,
+      })
+
+      reply.send(result)
+    } catch (error) {
+      reply.code(500).send({ error: error.message })
+    }
+  }
+
+  app.put('/api/rooms/:roomId/messages/:eventId', { preHandler: authenticate }, handleEditMessage)
+  app.put('/rooms/:roomId/messages/:eventId', { preHandler: authenticate }, handleEditMessage)
 
   /**
    * DELETE /api/rooms/:roomId/messages/:eventId
@@ -114,31 +149,30 @@ export function registerMessageRoutes(app) {
    * @param {object} reply - Fastify reply object
    * @returns {void}
    */
-  app.delete(
-    '/api/rooms/:roomId/messages/:eventId',
-    {},
-    async (request, reply) => {
-      const { roomId, eventId } = request.params
-      const userId = request.user?.userId
-      const accessToken = request.user?.accessToken
+  const handleDeleteMessage = async (request, reply) => {
+    const { roomId, eventId } = request.params
+    const userId = request.user?.userId
+    const accessToken = request.user?.accessToken
 
-      if (!userId) {
-        reply.code(401).send({ error: 'Unauthorized: no user ID' })
-        return
-      }
-
-      try {
-        const result = await redactMessage(roomId, eventId, {
-          accessToken,
-          userId,
-        })
-
-        reply.send(result)
-      } catch (error) {
-        reply.code(500).send({ error: error.message })
-      }
+    if (!userId) {
+      reply.code(401).send({ error: 'Unauthorized: no user ID' })
+      return
     }
-  )
+
+    try {
+      const result = await redactMessage(roomId, eventId, {
+        accessToken,
+        userId,
+      })
+
+      reply.send(result)
+    } catch (error) {
+      reply.code(500).send({ error: error.message })
+    }
+  }
+
+  app.delete('/api/rooms/:roomId/messages/:eventId', { preHandler: authenticate }, handleDeleteMessage)
+  app.delete('/rooms/:roomId/messages/:eventId', { preHandler: authenticate }, handleDeleteMessage)
 
   /**
    * POST /api/rooms/:roomId/messages/:eventId/reactions
@@ -150,36 +184,35 @@ export function registerMessageRoutes(app) {
    * @param {object} reply - Fastify reply object
    * @returns {void}
    */
-  app.post(
-    '/api/rooms/:roomId/messages/:eventId/reactions',
-    {},
-    async (request, reply) => {
-      const { roomId, eventId } = request.params
-      const { key } = request.body
-      const userId = request.user?.userId
-      const accessToken = request.user?.accessToken
+  const handleReactToMessage = async (request, reply) => {
+    const { roomId, eventId } = request.params
+    const { key } = request.body || {}
+    const userId = request.user?.userId
+    const accessToken = request.user?.accessToken
 
-      if (!userId) {
-        reply.code(401).send({ error: 'Unauthorized: no user ID' })
-        return
-      }
-
-      if (!key) {
-        reply.code(400).send({ error: 'Bad request: no reaction key provided' })
-        return
-      }
-
-      try {
-        const result = await reactToMessage(roomId, eventId, {
-          key,
-          accessToken,
-          userId,
-        })
-
-        reply.send(result)
-      } catch (error) {
-        reply.code(500).send({ error: error.message })
-      }
+    if (!userId) {
+      reply.code(401).send({ error: 'Unauthorized: no user ID' })
+      return
     }
-  )
+
+    if (!key) {
+      reply.code(400).send({ error: 'Bad request: no reaction key provided' })
+      return
+    }
+
+    try {
+      const result = await reactToMessage(roomId, eventId, {
+        key,
+        accessToken,
+        userId,
+      })
+
+      reply.send(result)
+    } catch (error) {
+      reply.code(500).send({ error: error.message })
+    }
+  }
+
+  app.post('/api/rooms/:roomId/messages/:eventId/reactions', { preHandler: authenticate }, handleReactToMessage)
+  app.post('/rooms/:roomId/messages/:eventId/reactions', { preHandler: authenticate }, handleReactToMessage)
 }

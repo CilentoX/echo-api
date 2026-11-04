@@ -143,3 +143,61 @@ export async function reactToMessage(roomId, eventId, { key, accessToken, userId
 
   return response
 }
+
+/**
+ * Loads older messages for a Matrix room from Synapse.
+ *
+ * @param {string} roomId - The Matrix room ID (e.g. "!room:domain")
+ * @param {Object} params - Query parameters
+ * @param {number} [params.limit=20] - Number of messages to fetch
+ * @param {string} [params.from] - Pagination token from Synapse
+ * @param {string} params.accessToken - User access token
+ * @param {string} [params.userId] - User Matrix ID
+ * @returns {Promise<Array<Object>>} Formatted array of message events
+ */
+export async function getOlderMessages(roomId, { limit = 20, from, accessToken, userId }) {
+  const baseUrl = process.env.SYNAPSE_URL || 'http://localhost:8008'
+  const encodedRoomId = encodeURIComponent(roomId)
+  let url = `${baseUrl}/_matrix/client/v3/rooms/${encodedRoomId}/messages?dir=b&limit=${encodeURIComponent(limit)}`
+  if (from) {
+    url += `&from=${encodeURIComponent(from)}`
+  }
+
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/json',
+    },
+  })
+
+  if (!res.ok) {
+    if (res.status === 404 || res.status === 403) {
+      return []
+    }
+    const errText = await res.text()
+    throw new Error(`Matrix Synapse error (${res.status}): ${errText}`)
+  }
+
+  const data = await res.json()
+  const chunk = Array.isArray(data?.chunk) ? data.chunk : []
+
+  return chunk
+    .filter((ev) => ev && ev.type === 'm.room.message' && ev.content)
+    .map((ev) => {
+      const relatesTo = ev.content?.['m.relates_to']
+      const replyEventId = relatesTo?.['m.in_reply_to']?.event_id
+      const newContent = ev.content?.['m.new_content']
+
+      return {
+        eventId: ev.event_id,
+        roomId: ev.room_id || roomId,
+        sender: ev.sender,
+        body: newContent?.body || ev.content?.body || '',
+        originServerTs: ev.origin_server_ts || Date.now(),
+        ...(replyEventId ? { replyTo: { eventId: replyEventId, sender: '', body: '' } } : {}),
+        ...(ev.unsigned?.redacted_because ? { redacted: true } : {}),
+        senderAvatarUrl: null,
+      }
+    })
+}
