@@ -465,6 +465,20 @@ export const guildProfileService = {
       }
     }
 
+    // Record usage in tracking table
+    try {
+      if (userId) {
+        await prisma.guildInviteUsage.create({
+          data: {
+            inviteId: invite.id,
+            userId: userId,
+          },
+        })
+      }
+    } catch (err) {
+      console.warn('[joinGuildViaInvite] Record usage error:', err.message)
+    }
+
     // Increment invite usage
     await prisma.guildInvite.update({
       where: { id: invite.id },
@@ -479,21 +493,65 @@ export const guildProfileService = {
   },
 
   /**
-   * List all invites for a guild.
+   * List all invites for a guild with tracking of who created and who accepted.
    */
   async listGuildInvites(guildId) {
     const invites = await prisma.guildInvite.findMany({
       where: { guildId },
+      include: {
+        usages: {
+          orderBy: { usedAt: 'desc' },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     })
+
+    // Collect all involved userIds for batch profile lookup
+    const allUserIds = new Set()
+    for (const inv of invites) {
+      if (inv.creatorId) allUserIds.add(inv.creatorId)
+      for (const u of inv.usages || []) {
+        if (u.userId) allUserIds.add(u.userId)
+      }
+    }
+
+    const profiles = await prisma.userProfile.findMany({
+      where: { userId: { in: Array.from(allUserIds) } },
+    })
+    const profileMap = new Map(profiles.map((p) => [p.userId, p]))
 
     const baseUrl = process.env.PUBLIC_INVITE_URL || process.env.PUBLIC_BASE_URL || 'https://echo-api.litteris.online'
     const cleanBaseUrl = baseUrl.replace(/\/+$/, '')
 
-    return invites.map((inv) => ({
-      ...inv,
-      url: `${cleanBaseUrl}/invite/${inv.code}`,
-    }))
+    return invites.map((inv) => {
+      const creatorProfile = profileMap.get(inv.creatorId)
+      return {
+        ...inv,
+        url: `${cleanBaseUrl}/invite/${inv.code}`,
+        creator: {
+          userId: inv.creatorId,
+          name: creatorProfile?.nickname || creatorProfile?.username || inv.creatorId.replace(/^@/, '').split(':')[0],
+          nickname: creatorProfile?.nickname || null,
+          username: creatorProfile?.username || null,
+          avatarUrl: creatorProfile?.avatarUrl || null,
+        },
+        usages: (inv.usages || []).map((usage) => {
+          const userProf = profileMap.get(usage.userId)
+          return {
+            id: usage.id,
+            userId: usage.userId,
+            usedAt: usage.usedAt,
+            user: {
+              userId: usage.userId,
+              name: userProf?.nickname || userProf?.username || usage.userId.replace(/^@/, '').split(':')[0],
+              nickname: userProf?.nickname || null,
+              username: userProf?.username || null,
+              avatarUrl: userProf?.avatarUrl || null,
+            },
+          }
+        }),
+      }
+    })
   },
 
   /**
