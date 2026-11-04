@@ -482,3 +482,110 @@ export async function getOrCreateDirectRoom(userId, targetUserId, accessToken, d
 
   return { roomId }
 }
+
+/**
+ * Lista usuários cadastrados no sistema para descoberta, ordenados pelos mais recentes.
+ * Exclui o próprio usuário e usuários bloqueados.
+ * Anota o status da relação ("friend", "pending_incoming", "pending_outgoing", "none").
+ *
+ * @param {string} userId - Matrix User ID do usuário atual
+ * @param {object} [options]
+ * @param {string} [options.query] - Termo de busca opcional (nome, apelido ou userId)
+ * @param {number} [options.limit] - Quantidade máxima de resultados (padrão 50)
+ * @param {any} [db] - Prisma client instance
+ */
+export async function discoverUsers(userId, options = {}, db = prisma) {
+  if (!userId) {
+    throw new Error('userId é obrigatório')
+  }
+
+  const limit = options.limit || 50
+  const query = (options.query || '').toLowerCase().trim()
+
+  // 1. Busca relacionamentos existentes do usuário para mapear status
+  const relationships = await db.friendship.findMany({
+    where: {
+      OR: [
+        { requesterId: userId },
+        { addresseeId: userId },
+      ],
+    },
+  })
+
+  const relMap = new Map()
+  const blockedIds = new Set()
+
+  for (const r of relationships) {
+    const otherId = r.requesterId === userId ? r.addresseeId : r.requesterId
+    if (r.status === 'blocked') {
+      blockedIds.add(otherId)
+    } else if (r.status === 'accepted') {
+      relMap.set(otherId, { status: 'friend', friendshipId: r.id, directRoomId: r.directRoomId })
+    } else if (r.status === 'pending') {
+      if (r.requesterId === userId) {
+        relMap.set(otherId, { status: 'pending_outgoing', friendshipId: r.id })
+      } else {
+        relMap.set(otherId, { status: 'pending_incoming', friendshipId: r.id })
+      }
+    }
+  }
+
+  // 2. Busca todos os usuários de UserToken (ordenados pelos mais recentes)
+  const tokens = await db.userToken.findMany({
+    where: {
+      userId: {
+        not: userId,
+        notIn: Array.from(blockedIds),
+      },
+    },
+    orderBy: { updatedAt: 'desc' },
+    take: limit * 2,
+  })
+
+  const userIds = tokens.map((t) => t.userId)
+
+  // 3. Busca perfis de UserProfile
+  const profiles = userIds.length > 0
+    ? await db.userProfile.findMany({
+        where: { userId: { in: userIds } },
+      })
+    : []
+
+  const profileMap = new Map(profiles.map((p) => [p.userId, p]))
+
+  // 4. Monta lista consolidada
+  const results = []
+  for (const token of tokens) {
+    const profile = profileMap.get(token.userId)
+    const formatted = formatUserProfile(token.userId, profile)
+    const rel = relMap.get(token.userId) || { status: 'none' }
+
+    if (query) {
+      const matchUserId = formatted.userId.toLowerCase().includes(query)
+      const matchNickname = (formatted.nickname || '').toLowerCase().includes(query)
+      const matchDisplayName = (formatted.displayName || '').toLowerCase().includes(query)
+      if (!matchUserId && !matchNickname && !matchDisplayName) {
+        continue
+      }
+    }
+
+    results.push({
+      userId: formatted.userId,
+      displayName: formatted.displayName,
+      nickname: formatted.nickname,
+      avatarUrl: formatted.avatarUrl,
+      bio: formatted.bio,
+      status: rel.status,
+      friendshipId: rel.friendshipId || null,
+      directRoomId: rel.directRoomId || null,
+      joinedAt: token.updatedAt,
+    })
+
+    if (results.length >= limit) {
+      break
+    }
+  }
+
+  return { users: results }
+}
+

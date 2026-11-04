@@ -314,4 +314,34 @@ describe('friendService', () => {
       expect(res.roomId).toBe('!room123:litteris.online')
     })
   })
+
+  describe('discoverUsers', () => {
+    it('deve listar usuários com status de amizade correto e excluir usuário atual', async () => {
+      const myId = '@me:litteris.online'
+      const other1 = '@other1:litteris.online'
+      const other2 = '@other2:litteris.online'
+
+      mockDb.friendship.findMany.mockResolvedValue([
+        { id: 'f1', requesterId: myId, addresseeId: other1, status: 'accepted', directRoomId: '!dm1' },
+      ])
+
+      mockDb.userToken.findMany = vi.fn().mockResolvedValue([
+        { userId: other1, updatedAt: new Date('2026-11-04T12:00:00Z') },
+        { userId: other2, updatedAt: new Date('2026-11-04T11:00:00Z') },
+      ])
+
+      mockDb.userProfile.findMany.mockResolvedValue([
+        { userId: other1, nickname: 'other_one', avatarUrl: 'http://img1', bio: 'Bio 1' },
+      ])
+
+      const res = await friendService.discoverUsers(myId, {}, mockDb)
+      expect(res.users).toHaveLength(2)
+      expect(res.users[0].userId).toBe(other1)
+      expect(res.users[0].status).toBe('friend')
+      expect(res.users[0].nickname).toBe('other_one')
+      expect(res.users[1].userId).toBe(other2)
+      expect(res.users[1].status).toBe('none')
+    })
+  })
 })
+

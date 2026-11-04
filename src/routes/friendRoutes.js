@@ -27,6 +27,23 @@ export function registerFriendRoutes(app) {
   app.get('/friends', { preHandler: authenticate }, handleList)
   app.get('/api/friends', { preHandler: authenticate }, handleList)
 
+  const handleDiscover = async (request, reply) => {
+    try {
+      const db = getDb(request)
+      const query = request.query?.q || request.query?.search || ''
+      const limit = request.query?.limit ? parseInt(request.query.limit, 10) : 50
+      const data = await friendService.discoverUsers(request.user.userId, { query, limit }, db)
+      return reply.code(200).send(data)
+    } catch (err) {
+      request.log.error(err)
+      const status = err.statusCode || 500
+      return reply.code(status).send({ error: err.message || 'Erro ao buscar usuários para descobrimento' })
+    }
+  }
+
+  app.get('/friends/discover', { preHandler: authenticate }, handleDiscover)
+  app.get('/api/friends/discover', { preHandler: authenticate }, handleDiscover)
+
   const handleSendRequest = async (request, reply) => {
     try {
       const db = getDb(request)
@@ -168,3 +185,4 @@ export function registerFriendRoutes(app) {
   app.post('/friends/dm', { preHandler: authenticate }, handleDirectRoom)
   app.post('/api/friends/dm', { preHandler: authenticate }, handleDirectRoom)
 }
+
