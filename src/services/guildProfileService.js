@@ -88,9 +88,15 @@ export const guildProfileService = {
    * @returns {Promise<Object>}
    */
   async patch(guildId, data) {
+    const cleanData = {}
+    if (data.name !== undefined) cleanData.name = data.name
+    if (data.description !== undefined) cleanData.description = data.description
+    if (data.avatarUrl !== undefined) cleanData.avatarUrl = data.avatarUrl
+    if (data.bannerUrl !== undefined) cleanData.bannerUrl = data.bannerUrl
+
     return await prisma.guildProfile.update({
       where: { guildId },
-      data,
+      data: cleanData,
     })
   },
 

@@ -39,18 +39,17 @@ export async function guildProfileRoutes(fastify, opts) {
       let existing = await guildProfileService.getByGuildId(guildId);
       if (!existing) {
         await guildProfileService.upsert({
-          id: guildId,
           guildId,
           name,
-          description: null,
-          avatarUrl: null,
-          bannerUrl: null,
-          createdBy: "system", // Será preenchido pelo frontend quando disponível
+          description: description || null,
+          avatarUrl: avatarUrl || null,
+          bannerUrl: bannerUrl || null,
+          createdBy: request.user?.userId || "system",
         });
         existing = await guildProfileService.getByGuildId(guildId);
       }
 
-      const updated = await guildProfileService.patch(existing.id, {
+      const updated = await guildProfileService.patch(existing?.guildId || guildId, {
         name,
         description,
         avatarUrl,

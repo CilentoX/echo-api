@@ -43,8 +43,8 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/prisma ./prisma/
 
-# Criar diretório de uploads
-RUN mkdir -p src/uploads && chown -R echoapi:nodejs src/uploads
+# Criar diretório de uploads e ajustar permissões da aplicação
+RUN mkdir -p src/uploads && chown -R echoapi:nodejs /app
 
 # Copiar entrypoint script
 COPY docker-entrypoint.sh ./docker-entrypoint.sh

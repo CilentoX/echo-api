@@ -90,4 +90,29 @@ describe('userProfileService - nickname management', () => {
       expect(true).toBe(true)
     })
   })
+
+  describe('isValidUsername', () => {
+    it('should return true for valid username', () => {
+      expect(service.isValidUsername('valid_user.123')).toBe(true)
+    })
+
+    it('should return false for username under 3 chars', () => {
+      expect(service.isValidUsername('ab')).toBe(false)
+    })
+
+    it('should return false for username exceeding 32 chars', () => {
+      expect(service.isValidUsername('a'.repeat(33))).toBe(false)
+    })
+
+    it('should return false for username with spaces or special characters', () => {
+      expect(service.isValidUsername('user name!')).toBe(false)
+    })
+  })
+
+  describe('isUsernameAvailable', () => {
+    it('should return invalid for invalid format', async () => {
+      const res = await service.isUsernameAvailable('a!')
+      expect(res.available).toBe(false)
+    })
+  })
 })
