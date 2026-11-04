@@ -205,23 +205,35 @@ export function registerGuildRoutes(app) {
   <meta property="og:description" content="${desc}">
   ${avatarUrl ? `<meta property="og:image" content="${avatarUrl}">` : ''}
   <style>
-    body { margin: 0; background: #0b0e14; color: #e1e7ec; font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; box-sizing: border-box; }
-    .card { background: #12161f; border: 1px solid rgba(255,255,255,0.08); border-radius: 24px; overflow: hidden; width: 100%; max-width: 440px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); position: relative; }
-    .banner { height: 120px; background: ${bannerUrl ? `url('${bannerUrl}') center/cover no-repeat` : 'linear-gradient(135deg, rgba(49,46,129,0.7), rgba(88,28,135,0.5), #0b0e14)'}; position: relative; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0b0e14; color: #e1e7ec; font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px 16px; }
+    .card { background: #12161f; border: 1px solid rgba(255,255,255,0.08); border-radius: 24px; overflow: hidden; width: 100%; max-width: 440px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); position: relative; }
+    .banner { height: 130px; background: ${bannerUrl ? `url('${bannerUrl}') center/cover no-repeat` : 'linear-gradient(135deg, rgba(49,46,129,0.7), rgba(88,28,135,0.5), #0b0e14)'}; position: relative; }
     .banner::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, #12161f, transparent); }
     .content { padding: 0 28px 28px; position: relative; text-align: center; }
-    .avatar-wrapper { margin: -40px auto 16px; width: 72px; height: 72px; border-radius: 20px; border: 4px solid #12161f; background: #161c28; overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; color: #0FB9A8; box-shadow: 0 10px 20px rgba(0,0,0,0.3); }
+    .avatar-wrapper { margin: -42px auto 14px; width: 76px; height: 76px; border-radius: 20px; border: 4px solid #12161f; background: #161c28; overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; color: #0FB9A8; box-shadow: 0 10px 20px rgba(0,0,0,0.3); }
     .avatar-img { width: 100%; height: 100%; object-fit: cover; }
-    .invite-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #0FB9A8; font-weight: 700; margin-bottom: 6px; }
-    h1 { font-size: 22px; font-weight: 700; margin: 0 0 8px; color: #fff; }
-    .desc { font-size: 13px; color: #94a3b8; margin: 0 0 20px; line-height: 1.5; }
-    .stats { display: flex; justify-content: center; gap: 16px; margin-bottom: 24px; font-size: 12px; color: #64748b; font-weight: 500; }
+    .invite-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: #0FB9A8; font-weight: 700; margin-bottom: 6px; }
+    h1 { font-size: 22px; font-weight: 700; margin: 0 0 8px; color: #fff; letter-spacing: -0.02em; }
+    .desc { font-size: 13px; color: #94a3b8; margin: 0 0 18px; line-height: 1.5; }
+    .stats { display: flex; justify-content: center; gap: 16px; margin-bottom: 22px; font-size: 12px; color: #64748b; font-weight: 500; }
     .stats span { display: flex; align-items: center; gap: 4px; }
     .stats strong { color: #0FB9A8; }
-    .btn-primary { display: block; background: #0FB9A8; color: #0b0e14; font-weight: 700; text-decoration: none; padding: 14px 24px; border-radius: 14px; font-size: 15px; box-shadow: 0 8px 20px rgba(15,185,168,0.25); cursor: pointer; border: none; width: 100%; box-sizing: border-box; }
+    .btn-primary { display: block; background: #0FB9A8; color: #0b0e14; font-weight: 700; text-decoration: none; padding: 13px 20px; border-radius: 14px; font-size: 15px; box-shadow: 0 8px 20px rgba(15,185,168,0.25); cursor: pointer; border: none; width: 100%; transition: all 0.15s; }
+    .btn-primary:hover { background: #14d6c3; transform: translateY(-1px); }
     .btn-primary:active { transform: scale(0.98); }
-    .code-box { margin-top: 16px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 10px 14px; font-size: 12px; color: #94a3b8; display: flex; align-items: center; justify-content: space-between; }
-    .code-val { font-family: monospace; color: #fff; font-weight: bold; }
+    .btn-secondary { display: block; margin-top: 10px; background: rgba(255,255,255,0.04); color: #e1e7ec; font-weight: 600; text-decoration: none; padding: 11px 20px; border-radius: 14px; font-size: 13px; border: 1px solid rgba(255,255,255,0.08); cursor: pointer; width: 100%; transition: all 0.15s; }
+    .btn-secondary:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15); }
+    .btn-secondary:active { transform: scale(0.98); }
+    .copy-toast { display: none; margin-top: 10px; padding: 8px 12px; background: rgba(15,185,168,0.15); border: 1px solid rgba(15,185,168,0.3); border-radius: 10px; font-size: 12px; color: #0FB9A8; font-weight: 600; }
+    .steps-card { margin-top: 20px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 14px; padding: 14px 16px; text-align: left; font-size: 12px; color: #94a3b8; }
+    .steps-title { font-weight: 700; color: #e1e7ec; margin-bottom: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .steps-card ol { margin-left: 18px; line-height: 1.7; }
+    .steps-card ol li strong { color: #fff; }
+    .fallback-info { display: none; margin-top: 14px; padding: 10px 14px; background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.25); border-radius: 12px; font-size: 12px; color: #facc15; text-align: left; line-height: 1.4; }
+    .footer-download { margin-top: 18px; font-size: 12px; color: #64748b; }
+    .footer-download a { color: #0FB9A8; text-decoration: none; font-weight: 600; }
+    .footer-download a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -238,13 +250,59 @@ export function registerGuildRoutes(app) {
         <span>● <strong>${channelsCount || 1}</strong> ${channelsCount === 1 ? 'canal' : 'canais'}</span>
         <span>🛡️ Comunidade Echo</span>
       </div>
-      <a href="echo://invite/${code}" class="btn-primary" onclick="window.location.href='echo://invite/${code}';">Entrar no Echo</a>
-      <div class="code-box">
-        <span>Código do convite:</span>
-        <span class="code-val">${code}</span>
+
+      <button type="button" id="btn-open-app" class="btn-primary">Entrar no Echo Desktop</button>
+      <button type="button" id="btn-copy" class="btn-secondary">Copiar Código: <strong style="font-family: monospace; color: #fff;">${code}</strong></button>
+      <div id="copy-toast" class="copy-toast">✓ Código copiado! Abra o Echo e cole em "Entrar na guilda"</div>
+
+      <div id="fallback-info" class="fallback-info">
+        ⚠️ <strong>O Echo não abriu automaticamente?</strong><br/>
+        Clique em "Copiar Código" acima e cole diretamente dentro do app Echo no menu <strong>+ &gt; Entrar em uma guilda</strong>.
+      </div>
+
+      <div class="steps-card">
+        <div class="steps-title">Como entrar no servidor:</div>
+        <ol>
+          <li>Abra o <strong>Echo Desktop</strong> no seu computador.</li>
+          <li>Na barra lateral esquerda, clique no ícone <strong>+</strong>.</li>
+          <li>Selecione <strong>Entrar em uma guilda</strong> e cole o código <strong>${code}</strong>.</li>
+        </ol>
+      </div>
+
+      <div class="footer-download">
+        Ainda não tem o app instalado? <a href="https://github.com/CilentoX/Echo/releases/latest" target="_blank" rel="noopener">Baixar o Echo para Windows</a>
       </div>
     </div>
   </div>
+
+  <script>
+    var inviteCode = ${JSON.stringify(code)};
+    var btnOpen = document.getElementById('btn-open-app');
+    var btnCopy = document.getElementById('btn-copy');
+    var copyToast = document.getElementById('copy-toast');
+    var fallbackInfo = document.getElementById('fallback-info');
+
+    btnOpen.addEventListener('click', function() {
+      // Dispara o deep link sem navegações duplicadas
+      window.location.href = 'echo://invite/' + encodeURIComponent(inviteCode);
+      setTimeout(function() {
+        fallbackInfo.style.display = 'block';
+      }, 1500);
+    });
+
+    btnCopy.addEventListener('click', function() {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(inviteCode).then(function() {
+          copyToast.style.display = 'block';
+          setTimeout(function() { copyToast.style.display = 'none'; }, 3500);
+        }).catch(function() {
+          prompt('Copie o código do convite:', inviteCode);
+        });
+      } else {
+        prompt('Copie o código do convite:', inviteCode);
+      }
+    });
+  </script>
 </body>
 </html>`
   }
