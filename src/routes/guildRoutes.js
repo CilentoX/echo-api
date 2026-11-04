@@ -201,3 +201,4 @@ export function registerGuildRoutes(app) {
   app.post('/invites/:code/join', { preHandler: authenticate }, handleJoinInvite)
   app.post('/api/invites/:code/join', { preHandler: authenticate }, handleJoinInvite)
 }
+

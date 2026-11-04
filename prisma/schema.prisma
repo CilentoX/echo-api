@@ -87,3 +87,20 @@ model GuildInvite {
   @@index([code])
   @@index([guildId])
 }
+
+model Friendship {
+  id           String   @id @default(cuid())
+  requesterId  String   // Matrix User ID do usuário que enviou a solicitação
+  addresseeId  String   // Matrix User ID do usuário que recebeu a solicitação
+  status       String   @default("pending") // "pending" | "accepted" | "declined" | "blocked"
+  blockedById  String?  // Matrix User ID de quem executou o bloqueio (quando status === "blocked")
+  directRoomId String?  // ID da sala Matrix 1-a-1 direta (ex: "!dm_123:litteris.online")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([requesterId, addresseeId])
+  @@index([requesterId])
+  @@index([addresseeId])
+  @@index([status])
+}
+
