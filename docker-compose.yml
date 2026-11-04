@@ -28,12 +28,21 @@ services:
       - coolify
     volumes:
       - echo_api_uploads:/app/src/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:3001/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=coolify"
       - "traefik.http.routers.echo-api.rule=Host(`echo-api.litteris.online`)"
       - "traefik.http.routers.echo-api.entryPoints=http"
       - "traefik.http.services.echo-api.loadbalancer.server.port=3001"
+      - "traefik.http.services.echo-api.loadbalancer.healthcheck.path=/health"
+      - "traefik.http.services.echo-api.loadbalancer.healthcheck.interval=15s"
+      - "traefik.http.services.echo-api.loadbalancer.healthcheck.timeout=5s"
       - "traefik.http.middlewares.echo-api-proto.headers.customrequestheaders.X-Forwarded-Proto=https"
       - "traefik.http.routers.echo-api.middlewares=echo-api-proto@docker"
     logging:

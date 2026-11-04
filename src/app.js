@@ -69,9 +69,77 @@ app.addHook('onResponse', (request, reply) => {
   reply.header('Access-Control-Allow-Credentials', 'true')
 })
 
-// Health check route
-app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }))
-app.get('/', async () => ({ message: 'Echo API', version: '1.0.0' }))
+// Health check routes (Coolify, Docker, Traefik, Kubernetes)
+const handleHealth = async (request, reply) => {
+  let dbStatus = 'ok'
+  try {
+    if (prisma && typeof prisma.$queryRaw === 'function') {
+      await prisma.$queryRaw`SELECT 1`
+      dbStatus = 'connected'
+    }
+  } catch (err) {
+    dbStatus = 'disconnected'
+  }
+
+  const payload = {
+    status: 'ok',
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    services: {
+      database: dbStatus,
+    },
+    version: '1.0.0',
+    service: 'echo-api',
+  }
+
+  return reply
+    .code(200)
+    .header('Cache-Control', 'no-cache, no-store, must-revalidate')
+    .send(payload)
+}
+
+app.route({
+  method: ['GET', 'HEAD'],
+  url: '/health',
+  handler: handleHealth,
+})
+
+app.route({
+  method: ['GET', 'HEAD'],
+  url: '/api/health',
+  handler: handleHealth,
+})
+
+app.route({
+  method: ['GET', 'HEAD'],
+  url: '/healthz',
+  handler: handleHealth,
+})
+
+app.route({
+  method: ['GET', 'HEAD'],
+  url: '/readyz',
+  handler: handleHealth,
+})
+
+app.route({
+  method: ['GET', 'HEAD'],
+  url: '/livez',
+  handler: handleHealth,
+})
+
+app.route({
+  method: ['GET', 'HEAD'],
+  url: '/',
+  handler: async (request, reply) => {
+    return reply.code(200).send({
+      message: 'Echo API',
+      status: 'ok',
+      version: '1.0.0',
+      timestamp: new Date().toISOString(),
+    })
+  },
+})
 
 /**
  * Matrix proxy route - forwards all /matrix/* requests to Synapse

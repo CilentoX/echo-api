@@ -2,8 +2,8 @@
 FROM node:20-slim AS base
 
 # Instalar dependências do sistema incluindo OpenSSL para o Prisma
-# e postgresql-client para pg_isready/psql no entrypoint
-RUN apt-get update && apt-get install -y --no-install-recommends openssl postgresql-client && rm -rf /var/lib/apt/lists/*
+# postgresql-client para pg_isready/psql no entrypoint e curl para healthchecks
+RUN apt-get update && apt-get install -y --no-install-recommends openssl postgresql-client curl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -53,5 +53,8 @@ RUN chmod +x ./docker-entrypoint.sh
 USER echoapi
 
 EXPOSE 3001
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=25s --retries=3 \
+  CMD curl -f http://127.0.0.1:3001/health || exit 1
 
 ENTRYPOINT ["sh", "./docker-entrypoint.sh"]
