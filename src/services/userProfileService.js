@@ -26,6 +26,39 @@ export function isValidUsername(username) {
 }
 
 /**
+ * Checks if a username is available.
+ *
+ * @param {string} username - The username to check
+ * @param {string} [excludeUserId] - User ID to exclude from check (for the user's current username)
+ * @returns {Promise<{ available: boolean, username?: string, error?: string }>}
+ */
+export async function isUsernameAvailable(username, excludeUserId = null) {
+  if (!username || typeof username !== 'string') {
+    return { available: false, error: 'Username não informado' }
+  }
+
+  const clean = username.trim().toLowerCase()
+  if (!isValidUsername(clean)) {
+    return {
+      available: false,
+      error: 'Username deve ter de 3 a 32 caracteres (apenas letras minúsculas, números, _, . ou -)',
+    }
+  }
+
+  const where = { username: clean }
+  if (excludeUserId) {
+    where.NOT = { userId: excludeUserId }
+  }
+
+  const existing = await prisma.userProfile.findFirst({ where })
+  if (existing) {
+    return { available: false, error: 'Este username já está em uso' }
+  }
+
+  return { available: true, username: clean }
+}
+
+/**
  * Validates a nickname string.
  * - Must be 1-32 characters if provided
  * - Must not contain control characters

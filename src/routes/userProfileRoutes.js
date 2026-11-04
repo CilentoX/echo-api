@@ -24,11 +24,13 @@ export function registerUserProfileRoutes(app) {
       const userId = request.user.userId
 
       let profile = await service.getProfile(userId)
+      const fallbackUsername = userId ? userId.replace(/^@/, '').split(':')[0] : 'usuario'
 
       if (!profile) {
         // Return default profile rather than 404 for newly logged-in user
         reply.send({
           userId,
+          username: fallbackUsername,
           nickname: null,
           displayName: null,
           avatarUrl: null,
@@ -41,6 +43,7 @@ export function registerUserProfileRoutes(app) {
 
       reply.send({
         userId: profile.userId,
+        username: profile.username || fallbackUsername,
         nickname: profile.nickname,
         displayName: profile.nickname,
         avatarUrl: profile.avatarUrl,
@@ -48,6 +51,27 @@ export function registerUserProfileRoutes(app) {
         bio: profile.bio,
         links: profile.links || [],
       })
+    }
+  )
+
+  /**
+   * GET /api/profiles/check-username
+   * Checks if a username is valid and available.
+   */
+  app.get(
+    '/api/profiles/check-username',
+    { preHandler: authenticate },
+    async (request, reply) => {
+      const { username } = request.query || {}
+      const currentUserId = request.user?.userId
+
+      if (!username || typeof username !== 'string') {
+        reply.code(400).send({ error: 'Parâmetro username é obrigatório' })
+        return
+      }
+
+      const result = await service.isUsernameAvailable(username, currentUserId)
+      reply.send(result)
     }
   )
 
@@ -62,6 +86,7 @@ export function registerUserProfileRoutes(app) {
       const { userId } = request.params
 
       const profile = await service.getProfile(userId)
+      const fallbackUsername = userId ? userId.replace(/^@/, '').split(':')[0] : 'usuario'
 
       if (!profile) {
         reply.code(404).send({ error: 'Profile not found' })
@@ -70,6 +95,7 @@ export function registerUserProfileRoutes(app) {
 
       reply.send({
         userId: profile.userId,
+        username: profile.username || fallbackUsername,
         nickname: profile.nickname,
         displayName: profile.nickname,
         avatarUrl: profile.avatarUrl,
@@ -104,8 +130,10 @@ export function registerUserProfileRoutes(app) {
           request.user.accessToken
         )
 
+        const fallbackUsername = userId ? userId.replace(/^@/, '').split(':')[0] : 'usuario'
         reply.send({
           userId: updatedProfile.userId,
+          username: updatedProfile.username || fallbackUsername,
           nickname: updatedProfile.nickname,
           displayName: updatedProfile.nickname,
           avatarUrl: updatedProfile.avatarUrl,
