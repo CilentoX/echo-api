@@ -453,15 +453,34 @@ export const guildProfileService = {
       console.warn('[joinGuildViaInvite] Matrix join space error:', err.message)
     }
 
-    // Join default channel
+    // Join all guild channels so the member has immediate access to text & voice
     if (invite.guild?.channels && invite.guild.channels.length > 0) {
-      const defaultChannel = invite.guild.channels[0]
-      try {
-        if (client.joinRoom && defaultChannel.matrixRoomId) {
-          await client.joinRoom(defaultChannel.matrixRoomId)
+      for (const ch of invite.guild.channels) {
+        if (ch.matrixRoomId && client.joinRoom) {
+          try {
+            await client.joinRoom(ch.matrixRoomId)
+          } catch (err) {
+            console.warn(`[joinGuildViaInvite] Matrix join channel ${ch.name} (${ch.matrixRoomId}) error:`, err.message)
+          }
         }
+      }
+    }
+
+    // Record member profile in DB
+    if (userId) {
+      try {
+        await prisma.guildMemberProfile.upsert({
+          where: {
+            guildId_userId: { guildId: invite.guildId, userId },
+          },
+          update: {},
+          create: {
+            guildId: invite.guildId,
+            userId,
+          },
+        })
       } catch (err) {
-        console.warn('[joinGuildViaInvite] Matrix join channel error:', err.message)
+        console.warn('[joinGuildViaInvite] Member profile record error:', err.message)
       }
     }
 

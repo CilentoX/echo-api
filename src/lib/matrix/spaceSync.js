@@ -16,20 +16,30 @@ export async function createSpace(accessToken, name, topic, avatar, userId = '')
 
   const createOptions = {
     visibility: 'private',
-    preset: 'private_chat',
+    preset: 'public_chat',
     name,
     topic: topic || undefined,
     creation_content: { type: 'm.space' },
+    initial_state: [
+      {
+        type: 'm.room.join_rules',
+        state_key: '',
+        content: { join_rule: 'public' },
+      },
+      {
+        type: 'm.room.history_visibility',
+        state_key: '',
+        content: { history_visibility: 'shared' },
+      },
+    ],
   }
 
   if (avatar) {
-    createOptions.initial_state = [
-      {
-        type: 'm.room.avatar',
-        state_key: '',
-        content: { url: avatar },
-      },
-    ]
+    createOptions.initial_state.push({
+      type: 'm.room.avatar',
+      state_key: '',
+      content: { url: avatar },
+    })
   }
 
   const result = await client.createRoom(createOptions)
@@ -119,19 +129,29 @@ export async function createRoom(accessToken, spaceId, name, topic, avatar, user
 
   const createOptions = {
     visibility: 'private',
-    preset: 'private_chat',
+    preset: 'public_chat',
     name,
     topic: topic || undefined,
+    initial_state: [
+      {
+        type: 'm.room.join_rules',
+        state_key: '',
+        content: { join_rule: 'public' },
+      },
+      {
+        type: 'm.room.history_visibility',
+        state_key: '',
+        content: { history_visibility: 'shared' },
+      },
+    ],
   }
 
   if (avatar) {
-    createOptions.initial_state = [
-      {
-        type: 'm.room.avatar',
-        state_key: '',
-        content: { url: avatar },
-      },
-    ]
+    createOptions.initial_state.push({
+      type: 'm.room.avatar',
+      state_key: '',
+      content: { url: avatar },
+    })
   }
 
   const result = await client.createRoom(createOptions)
@@ -139,7 +159,7 @@ export async function createRoom(accessToken, spaceId, name, topic, avatar, user
 
   // Link child room to parent space if supported
   if (client.sendStateEvent && spaceId && roomId) {
-    const serverName = process.env.SYNAPSE_SERVER_NAME || 'echo.litteris.online'
+    const serverName = process.env.SYNAPSE_SERVER_NAME || 'litteris.online'
     try {
       await client.sendStateEvent(spaceId, 'm.space.child', { via: [serverName] }, roomId)
       await client.sendStateEvent(roomId, 'm.space.parent', { via: [serverName], canonical: true }, spaceId)

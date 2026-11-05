@@ -12,9 +12,10 @@ const clients = new Map()
  */
 export function getMatrixClient(userId, accessToken, baseUrl) {
   const url = baseUrl || process.env.SYNAPSE_URL || 'https://echo.litteris.online'
-  // If client already exists for this userId, return it from cache
-  if (clients.has(userId)) {
-    return clients.get(userId)
+  const cacheKey = `${userId || ''}:${accessToken || ''}`
+  // If client already exists for this cacheKey, return it from cache
+  if (clients.has(cacheKey)) {
+    return clients.get(cacheKey)
   }
 
   const client = createClient({
@@ -23,7 +24,7 @@ export function getMatrixClient(userId, accessToken, baseUrl) {
     userId,
   })
 
-  clients.set(userId, client)
+  clients.set(cacheKey, client)
   return client
 }
 
@@ -32,7 +33,11 @@ export function getMatrixClient(userId, accessToken, baseUrl) {
  * @param {string} userId - The Matrix user ID to invalidate
  */
 export function invalidateUser(userId) {
-  clients.delete(userId)
+  for (const key of clients.keys()) {
+    if (key.startsWith(`${userId}:`)) {
+      clients.delete(key)
+    }
+  }
 }
 
 /**
@@ -42,8 +47,6 @@ export function invalidateUser(userId) {
  * @returns {import('matrix-js-sdk').MatrixClientLike|null} The updated client, or null if not cached
  */
 export function updateUserToken(userId, newAccessToken) {
-  if (clients.has(userId)) {
-    clients.delete(userId)
-  }
+  invalidateUser(userId)
   return null
 }
