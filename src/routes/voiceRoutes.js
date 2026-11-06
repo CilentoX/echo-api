@@ -1,0 +1,264 @@
+import { authenticate } from '../plugins/auth.js'
+
+/**
+ * Estrutura em memória para estado de salas de voz e sinalização WebRTC.
+ * channelVoiceState: Map<channelId, Map<userId, ParticipantData>>
+ * signalQueues: Map<targetUserId, Array<{ fromUserId: string, channelId: string, signal: any, timestamp: number }>>
+ */
+const channelVoiceState = new Map()
+const signalQueues = new Map()
+
+const HEARTBEAT_TIMEOUT_MS = 15000 // 15s sem heartbeat remove o participante
+
+function pruneStaleParticipants(channelId) {
+  const channel = channelVoiceState.get(channelId)
+  if (!channel) return
+  const now = Date.now()
+  for (const [userId, participant] of channel.entries()) {
+    if (now - participant.lastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
+      channel.delete(userId)
+    }
+  }
+  if (channel.size === 0) {
+    channelVoiceState.delete(channelId)
+  }
+}
+
+function removeUserFromAllChannels(userId) {
+  for (const [channelId, channel] of channelVoiceState.entries()) {
+    if (channel.has(userId)) {
+      channel.delete(userId)
+      if (channel.size === 0) {
+        channelVoiceState.delete(channelId)
+      }
+    }
+  }
+}
+
+export function registerVoiceRoutes(app) {
+  /**
+   * POST /api/channels/:channelId/voice/join
+   * Entra em uma sala de voz.
+   */
+  app.post(
+    '/api/channels/:channelId/voice/join',
+    { preHandler: authenticate },
+    async (request, reply) => {
+      const { channelId } = request.params
+      const userId = request.user.userId
+      const { guildId, username, avatarUrl, isMuted, isDeafened } = request.body || {}
+
+      if (!channelId) {
+        return reply.code(400).send({ error: 'channelId é obrigatório' })
+      }
+
+      // Remove de outros canais anteriores
+      removeUserFromAllChannels(userId)
+
+      if (!channelVoiceState.has(channelId)) {
+        channelVoiceState.set(channelId, new Map())
+      }
+
+      const channel = channelVoiceState.get(channelId)
+      channel.set(userId, {
+        userId,
+        username: username || userId.replace(/^@/, '').split(':')[0],
+        avatarUrl: avatarUrl || null,
+        guildId: guildId || null,
+        isMuted: Boolean(isMuted),
+        isDeafened: Boolean(isDeafened),
+        isSpeaking: false,
+        lastHeartbeat: Date.now(),
+      })
+
+      pruneStaleParticipants(channelId)
+
+      const participants = Array.from(channel.values()).map((p) => ({
+        userId: p.userId,
+        username: p.username,
+        avatarUrl: p.avatarUrl,
+        isMuted: p.isMuted,
+        isDeafened: p.isDeafened,
+        isSpeaking: p.isSpeaking,
+      }))
+
+      return reply.code(200).send({ success: true, channelId, participants })
+    }
+  )
+
+  /**
+   * POST /api/channels/:channelId/voice/heartbeat
+   * Atualiza keep-alive e status de fala/mudo do participante.
+   */
+  app.post(
+    '/api/channels/:channelId/voice/heartbeat',
+    { preHandler: authenticate },
+    async (request, reply) => {
+      const { channelId } = request.params
+      const userId = request.user.userId
+      const { isSpeaking, isMuted, isDeafened } = request.body || {}
+
+      pruneStaleParticipants(channelId)
+
+      let channel = channelVoiceState.get(channelId)
+      if (!channel || !channel.has(userId)) {
+        // Se ainda não estava registrado, auto-registra
+        if (!channel) {
+          channel = new Map()
+          channelVoiceState.set(channelId, channel)
+        }
+        channel.set(userId, {
+          userId,
+          username: userId.replace(/^@/, '').split(':')[0],
+          avatarUrl: null,
+          guildId: null,
+          isMuted: Boolean(isMuted),
+          isDeafened: Boolean(isDeafened),
+          isSpeaking: Boolean(isSpeaking),
+          lastHeartbeat: Date.now(),
+        })
+      } else {
+        const participant = channel.get(userId)
+        participant.lastHeartbeat = Date.now()
+        if (typeof isSpeaking === 'boolean') participant.isSpeaking = isSpeaking
+        if (typeof isMuted === 'boolean') participant.isMuted = isMuted
+        if (typeof isDeafened === 'boolean') participant.isDeafened = isDeafened
+      }
+
+      const participants = Array.from(channel.values()).map((p) => ({
+        userId: p.userId,
+        username: p.username,
+        avatarUrl: p.avatarUrl,
+        isMuted: p.isMuted,
+        isDeafened: p.isDeafened,
+        isSpeaking: p.isSpeaking,
+      }))
+
+      return reply.code(200).send({ channelId, participants })
+    }
+  )
+
+  /**
+   * POST /api/channels/:channelId/voice/leave
+   * Sai da sala de voz.
+   */
+  app.post(
+    '/api/channels/:channelId/voice/leave',
+    { preHandler: authenticate },
+    async (request, reply) => {
+      const { channelId } = request.params
+      const userId = request.user.userId
+
+      if (channelId) {
+        const channel = channelVoiceState.get(channelId)
+        if (channel) {
+          channel.delete(userId)
+          if (channel.size === 0) channelVoiceState.delete(channelId)
+        }
+      } else {
+        removeUserFromAllChannels(userId)
+      }
+
+      return reply.code(200).send({ success: true })
+    }
+  )
+
+  /**
+   * GET /api/guilds/:guildId/voice/state
+   * Retorna os participantes ativos de voz para todos os canais de uma guilda.
+   */
+  app.get(
+    '/api/guilds/:guildId/voice/state',
+    { preHandler: authenticate },
+    async (request, reply) => {
+      const { guildId } = request.params
+      const channels = {}
+
+      for (const [channelId, channel] of channelVoiceState.entries()) {
+        pruneStaleParticipants(channelId)
+        const participants = []
+        for (const p of channel.values()) {
+          if (!guildId || p.guildId === guildId || !p.guildId) {
+            participants.push({
+              userId: p.userId,
+              username: p.username,
+              avatarUrl: p.avatarUrl,
+              isMuted: p.isMuted,
+              isDeafened: p.isDeafened,
+              isSpeaking: p.isSpeaking,
+            })
+          }
+        }
+        if (participants.length > 0) {
+          channels[channelId] = participants
+        }
+      }
+
+      return reply.code(200).send({ guildId, channels })
+    }
+  )
+
+  /**
+   * POST /api/channels/:channelId/voice/signal
+   * Envia uma mensagem de sinalização WebRTC (offer, answer, ICE candidate).
+   */
+  app.post(
+    '/api/channels/:channelId/voice/signal',
+    { preHandler: authenticate },
+    async (request, reply) => {
+      const { channelId } = request.params
+      const fromUserId = request.user.userId
+      const { targetUserId, signal } = request.body || {}
+
+      if (!targetUserId || !signal) {
+        return reply.code(400).send({ error: 'targetUserId e signal são obrigatórios' })
+      }
+
+      if (!signalQueues.has(targetUserId)) {
+        signalQueues.set(targetUserId, [])
+      }
+
+      const queue = signalQueues.get(targetUserId)
+      queue.push({
+        fromUserId,
+        channelId,
+        signal,
+        timestamp: Date.now(),
+      })
+
+      // Limita fila a 50 sinais para evitar vazamento
+      if (queue.length > 50) {
+        queue.splice(0, queue.length - 50)
+      }
+
+      return reply.code(200).send({ success: true })
+    }
+  )
+
+  /**
+   * GET /api/channels/:channelId/voice/signals
+   * Recupera e consome os sinais WebRTC destinados ao usuário atual.
+   */
+  app.get(
+    '/api/channels/:channelId/voice/signals',
+    { preHandler: authenticate },
+    async (request, reply) => {
+      const { channelId } = request.params
+      const myUserId = request.user.userId
+
+      const queue = signalQueues.get(myUserId) || []
+      // Filtra sinais para este canal ou gerais
+      const relevant = queue.filter((s) => !channelId || s.channelId === channelId)
+      // Mantém os que não são para este canal
+      const remaining = queue.filter((s) => channelId && s.channelId !== channelId)
+
+      if (remaining.length > 0) {
+        signalQueues.set(myUserId, remaining)
+      } else {
+        signalQueues.delete(myUserId)
+      }
+
+      return reply.code(200).send({ signals: relevant })
+    }
+  )
+}
