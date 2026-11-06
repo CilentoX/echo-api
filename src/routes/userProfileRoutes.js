@@ -1,5 +1,6 @@
 import { authenticate } from '../plugins/auth.js'
 import * as service from '../services/userProfileService.js'
+import { getMatrixClient } from '../lib/matrix/client.js'
 
 /**
  * Registers user profile routes with the Fastify app.
@@ -89,6 +90,30 @@ export function registerUserProfileRoutes(app) {
       const fallbackUsername = userId ? userId.replace(/^@/, '').split(':')[0] : 'usuario'
 
       if (!profile) {
+        // Fallback defensivo: se o perfil não estiver no PostgreSQL, tenta obter informações do Synapse
+        try {
+          const accessToken = request.user?.accessToken
+          if (accessToken && userId) {
+            const matrixClient = await getMatrixClient(request.user.userId, accessToken)
+            const mProfile = await matrixClient.getProfileInfo(userId)
+            if (mProfile) {
+              reply.send({
+                userId,
+                username: fallbackUsername,
+                nickname: mProfile.displayname || fallbackUsername,
+                displayName: mProfile.displayname || fallbackUsername,
+                avatarUrl: mProfile.avatar_url || null,
+                bannerUrl: null,
+                bio: null,
+                links: [],
+              })
+              return
+            }
+          }
+        } catch {
+          // ignore matrix lookup error
+        }
+
         reply.code(404).send({ error: 'Profile not found' })
         return
       }

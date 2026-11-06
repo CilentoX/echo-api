@@ -1,5 +1,6 @@
 import { authenticate } from '../plugins/auth.js'
 import { getMatrixClient } from '../lib/matrix/client.js'
+import { prisma } from '../db.js'
 
 /**
  * Registers member management routes.
@@ -34,12 +35,48 @@ export function registerMemberRoutes(app) {
         const matrixClient = await getMatrixClient(request.user.userId, accessToken)
         const membersData = await matrixClient.getJoinedRoomMembers(roomId)
         const joined = membersData?.joined || {}
-        const result = Object.entries(joined).map(([userId, data]) => ({
-          userId,
-          displayName: data?.display_name || userId.replace(/^@/, '').split(':')[0],
-          avatarUrl: data?.avatar_url || null,
-          presence: 'online',
-        }))
+        const userIds = Object.keys(joined)
+
+        // Busca perfis salvos no PostgreSQL para carregar o avatarUrl e apelido corretos do Echo
+        let profileMap = new Map()
+        if (userIds.length > 0) {
+          try {
+            const profiles = await prisma.userProfile.findMany({
+              where: { userId: { in: userIds } },
+            })
+            profileMap = new Map(profiles.map((p) => [p.userId, p]))
+          } catch (dbErr) {
+            request.log?.warn?.('[memberRoutes] Failed to fetch user profiles from DB:', dbErr.message)
+          }
+        }
+
+        const result = await Promise.all(
+          Object.entries(joined).map(async ([userId, data]) => {
+            const prof = profileMap.get(userId)
+            let presence = 'offline'
+
+            // O usuário autenticado da sessão atual está sempre online
+            if (userId === request.user.userId) {
+              presence = 'online'
+            } else {
+              try {
+                const p = await matrixClient.getPresence(userId)
+                if (p?.presence === 'online' || p?.presence === 'unavailable') {
+                  presence = p.presence
+                }
+              } catch {
+                presence = 'offline'
+              }
+            }
+
+            return {
+              userId,
+              displayName: prof?.nickname || data?.display_name || prof?.username || userId.replace(/^@/, '').split(':')[0],
+              avatarUrl: prof?.avatarUrl || data?.avatar_url || null,
+              presence,
+            }
+          })
+        )
         reply.send(result)
       } catch (error) {
         reply.code(500).send({ error: error.message })
