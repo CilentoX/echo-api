@@ -488,6 +488,19 @@ export async function getOrCreateDirectRoom(userId, targetUserId, accessToken, d
       where: { id: friendship.id },
       data: { directRoomId: roomId },
     })
+  } else {
+    try {
+      await db.friendship.create({
+        data: {
+          requesterId: userId,
+          addresseeId: targetUserId,
+          status: 'accepted',
+          directRoomId: roomId,
+        },
+      })
+    } catch {
+      // Ignora erro se registro concorrente já foi criado
+    }
   }
 
   return { roomId }
