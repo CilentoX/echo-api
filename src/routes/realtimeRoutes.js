@@ -118,4 +118,34 @@ export function registerRealtimeRoutes(app) {
       }
     }
   )
+
+  /**
+   * PUT /api/users/me/presence & PUT /api/users/:userId/presence
+   * Atualiza a presença do usuário conectado no Synapse (online, offline, unavailable).
+   */
+  const handleSetPresence = async (request, reply) => {
+    const accessToken = request.user?.accessToken
+    if (!accessToken) {
+      reply.code(401).send({ error: 'Unauthorized: no access token' })
+      return
+    }
+
+    const { presence = 'online', statusMsg } = request.body || {}
+    const validStates = ['online', 'offline', 'unavailable']
+    const normalized = validStates.includes(presence) ? presence : 'online'
+
+    try {
+      const matrixClient = await getMatrixClient(request.user.userId, accessToken)
+      await matrixClient.setPresence({
+        presence: normalized,
+        status_msg: statusMsg || undefined,
+      })
+      reply.send({ success: true, presence: normalized })
+    } catch (error) {
+      reply.code(500).send({ error: error.message })
+    }
+  }
+
+  app.put('/api/users/me/presence', { preHandler: authenticate }, handleSetPresence)
+  app.put('/api/users/:userId/presence', { preHandler: authenticate }, handleSetPresence)
 }
