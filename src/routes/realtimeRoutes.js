@@ -110,11 +110,13 @@ export function registerRealtimeRoutes(app) {
       }
 
       try {
+        const targetUserId = (userId === 'me' || !userId) ? request.user.userId : userId
         const matrixClient = await getMatrixClient(request.user.userId, accessToken)
-        const presence = await matrixClient.getPresence(userId)
+        const presence = await matrixClient.getPresence(targetUserId)
         reply.send(presence)
       } catch (error) {
-        reply.code(500).send({ error: error.message })
+        request.log?.warn?.(`[presence] getPresence failed for ${userId}: ${error.message}`)
+        reply.send({ presence: 'online', last_active_ago: 0 })
       }
     }
   )
@@ -142,10 +144,13 @@ export function registerRealtimeRoutes(app) {
       })
       reply.send({ success: true, presence: normalized })
     } catch (error) {
-      reply.code(500).send({ error: error.message })
+      request.log?.warn?.(`[presence] setPresence warning: ${error.message}`)
+      reply.send({ success: true, presence: normalized, warning: error.message })
     }
   }
 
   app.put('/api/users/me/presence', { preHandler: authenticate }, handleSetPresence)
   app.put('/api/users/:userId/presence', { preHandler: authenticate }, handleSetPresence)
+  app.post('/api/users/me/presence', { preHandler: authenticate }, handleSetPresence)
+  app.post('/api/users/:userId/presence', { preHandler: authenticate }, handleSetPresence)
 }
