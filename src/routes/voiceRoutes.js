@@ -8,10 +8,20 @@ import { authenticate } from '../plugins/auth.js'
 const channelVoiceState = new Map()
 const signalQueues = new Map()
 
-const HEARTBEAT_TIMEOUT_MS = 15000 // 15s sem heartbeat remove o participante
+const HEARTBEAT_TIMEOUT_MS = 25000 // 25s sem heartbeat remove o participante
+
+function normalizeChannelId(id) {
+  if (!id) return ''
+  try {
+    return decodeURIComponent(id).trim()
+  } catch {
+    return String(id).trim()
+  }
+}
 
 function pruneStaleParticipants(channelId) {
-  const channel = channelVoiceState.get(channelId)
+  const normId = normalizeChannelId(channelId)
+  const channel = channelVoiceState.get(normId)
   if (!channel) return
   const now = Date.now()
   for (const [userId, participant] of channel.entries()) {
@@ -20,7 +30,7 @@ function pruneStaleParticipants(channelId) {
     }
   }
   if (channel.size === 0) {
-    channelVoiceState.delete(channelId)
+    channelVoiceState.delete(normId)
   }
 }
 
@@ -44,7 +54,7 @@ export function registerVoiceRoutes(app) {
     '/api/channels/:channelId/voice/join',
     { preHandler: authenticate },
     async (request, reply) => {
-      const { channelId } = request.params
+      const channelId = normalizeChannelId(request.params.channelId)
       const userId = request.user.userId
       const { guildId, username, avatarUrl, isMuted, isDeafened } = request.body || {}
 
@@ -64,7 +74,7 @@ export function registerVoiceRoutes(app) {
         userId,
         username: username || userId.replace(/^@/, '').split(':')[0],
         avatarUrl: avatarUrl || null,
-        guildId: guildId || null,
+        guildId: guildId ? normalizeChannelId(guildId) : null,
         isMuted: Boolean(isMuted),
         isDeafened: Boolean(isDeafened),
         isSpeaking: false,
@@ -82,7 +92,7 @@ export function registerVoiceRoutes(app) {
         isSpeaking: p.isSpeaking,
       }))
 
-      return reply.code(200).send({ success: true, channelId, participants })
+      return reply.code(200).send({ success: true, channelId, myUserId: userId, participants })
     }
   )
 
@@ -94,7 +104,7 @@ export function registerVoiceRoutes(app) {
     '/api/channels/:channelId/voice/heartbeat',
     { preHandler: authenticate },
     async (request, reply) => {
-      const { channelId } = request.params
+      const channelId = normalizeChannelId(request.params.channelId)
       const userId = request.user.userId
       const { isSpeaking, isMuted, isDeafened } = request.body || {}
 
@@ -102,7 +112,6 @@ export function registerVoiceRoutes(app) {
 
       let channel = channelVoiceState.get(channelId)
       if (!channel || !channel.has(userId)) {
-        // Se ainda não estava registrado, auto-registra
         if (!channel) {
           channel = new Map()
           channelVoiceState.set(channelId, channel)
@@ -134,7 +143,7 @@ export function registerVoiceRoutes(app) {
         isSpeaking: p.isSpeaking,
       }))
 
-      return reply.code(200).send({ channelId, participants })
+      return reply.code(200).send({ channelId, myUserId: userId, participants })
     }
   )
 
@@ -146,10 +155,11 @@ export function registerVoiceRoutes(app) {
     '/api/channels/:channelId/voice/leave',
     { preHandler: authenticate },
     async (request, reply) => {
-      const { channelId } = request.params
+      const rawChannelId = request.params.channelId
+      const channelId = rawChannelId ? normalizeChannelId(rawChannelId) : null
       const userId = request.user.userId
 
-      if (channelId) {
+      if (channelId && channelId !== 'current') {
         const channel = channelVoiceState.get(channelId)
         if (channel) {
           channel.delete(userId)
@@ -171,11 +181,12 @@ export function registerVoiceRoutes(app) {
     '/api/guilds/:guildId/voice/state',
     { preHandler: authenticate },
     async (request, reply) => {
-      const { guildId } = request.params
+      const rawGuildId = request.params.guildId
+      const guildId = rawGuildId ? normalizeChannelId(rawGuildId) : ''
       const channels = {}
 
-      for (const [channelId, channel] of channelVoiceState.entries()) {
-        pruneStaleParticipants(channelId)
+      for (const [chId, channel] of channelVoiceState.entries()) {
+        pruneStaleParticipants(chId)
         const participants = []
         for (const p of channel.values()) {
           if (!guildId || p.guildId === guildId || !p.guildId) {
@@ -190,7 +201,7 @@ export function registerVoiceRoutes(app) {
           }
         }
         if (participants.length > 0) {
-          channels[channelId] = participants
+          channels[chId] = participants
         }
       }
 
@@ -206,7 +217,7 @@ export function registerVoiceRoutes(app) {
     '/api/channels/:channelId/voice/signal',
     { preHandler: authenticate },
     async (request, reply) => {
-      const { channelId } = request.params
+      const channelId = normalizeChannelId(request.params.channelId)
       const fromUserId = request.user.userId
       const { targetUserId, signal } = request.body || {}
 
@@ -243,14 +254,15 @@ export function registerVoiceRoutes(app) {
     '/api/channels/:channelId/voice/signals',
     { preHandler: authenticate },
     async (request, reply) => {
-      const { channelId } = request.params
+      const channelId = normalizeChannelId(request.params.channelId)
       const myUserId = request.user.userId
 
-      const queue = signalQueues.get(myUserId) || []
+      const now = Date.now()
+      const rawQueue = (signalQueues.get(myUserId) || []).filter((s) => now - s.timestamp < 45000)
       // Filtra sinais para este canal ou gerais
-      const relevant = queue.filter((s) => !channelId || s.channelId === channelId)
+      const relevant = rawQueue.filter((s) => !channelId || s.channelId === channelId)
       // Mantém os que não são para este canal
-      const remaining = queue.filter((s) => channelId && s.channelId !== channelId)
+      const remaining = rawQueue.filter((s) => channelId && s.channelId !== channelId)
 
       if (remaining.length > 0) {
         signalQueues.set(myUserId, remaining)
