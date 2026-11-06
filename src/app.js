@@ -30,6 +30,14 @@ await app.register(multipart, {
 const prisma = new PrismaClient()
 await app.register(setupPrismaClient, { client: prisma })
 
+// Limpeza defensiva de IDs fictícios legados de DM (!dm_...) no banco
+if (prisma?.friendship && typeof prisma.friendship.updateMany === 'function') {
+  prisma.friendship.updateMany({
+    where: { directRoomId: { startsWith: '!dm_' } },
+    data: { directRoomId: null },
+  }).catch(() => {})
+}
+
 // ── CORS ──
 // Permite chamadas do app desktop (dev: http://localhost:1420) e de outros
 // clientes. Em produção, restringir a origens específicas via env CORS_ORIGIN.

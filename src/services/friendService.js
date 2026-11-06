@@ -1,5 +1,6 @@
 import { prisma } from '../db.js'
 import { getMatrixClient } from '../lib/matrix/client.js'
+import { getUserAccessTokenDB } from '../lib/auth/tokenStore.js'
 
 /**
  * Normaliza e busca o perfil de um usuário para exibição em listas de amizade.
@@ -74,7 +75,7 @@ export async function listFriends(userId, db = prisma) {
         avatarUrl: formatted.avatarUrl,
         bio: formatted.bio,
         status: 'accepted',
-        directRoomId: r.directRoomId || null,
+        directRoomId: (r.directRoomId && !r.directRoomId.startsWith('!dm_')) ? r.directRoomId : null,
         createdAt: r.createdAt,
         updatedAt: r.updatedAt,
       })
@@ -455,8 +456,36 @@ export async function getOrCreateDirectRoom(userId, targetUserId, accessToken, d
     },
   })
 
-  if (friendship?.directRoomId) {
-    return { roomId: friendship.directRoomId }
+  // Se já houver um directRoomId válido gravado (não-mock), garante que ambos os participantes estejam na sala
+  if (friendship?.directRoomId && !friendship.directRoomId.startsWith('!dm_')) {
+    const existingRoomId = friendship.directRoomId
+
+    // Garante que o solicitante esteja dentro da sala
+    if (accessToken) {
+      try {
+        const client = getMatrixClient(userId, accessToken)
+        if (client && typeof client.joinRoom === 'function') {
+          await client.joinRoom(existingRoomId).catch(() => {})
+        }
+      } catch (err) {
+        console.warn('[friendService] Falha ao verificar/entrar na sala direta:', err.message)
+      }
+    }
+
+    // Auto-join do usuário alvo se tiver token registrado no banco
+    try {
+      const targetToken = await getUserAccessTokenDB(db, targetUserId).catch(() => null)
+      if (targetToken) {
+        const targetClient = getMatrixClient(targetUserId, targetToken)
+        if (targetClient && typeof targetClient.joinRoom === 'function') {
+          await targetClient.joinRoom(existingRoomId).catch(() => {})
+        }
+      }
+    } catch (err) {
+      console.warn('[friendService] Falha no auto-join do destinatário:', err.message)
+    }
+
+    return { roomId: existingRoomId }
   }
 
   let roomId = null
@@ -472,6 +501,21 @@ export async function getOrCreateDirectRoom(userId, targetUserId, accessToken, d
           visibility: 'private',
         })
         roomId = typeof res === 'string' ? res : (res?.room_id || res?.roomId)
+
+        // Se criou a sala com sucesso, faz o auto-join do usuário convidado
+        if (roomId) {
+          try {
+            const targetToken = await getUserAccessTokenDB(db, targetUserId).catch(() => null)
+            if (targetToken) {
+              const targetClient = getMatrixClient(targetUserId, targetToken)
+              if (targetClient && typeof targetClient.joinRoom === 'function') {
+                await targetClient.joinRoom(roomId).catch(() => {})
+              }
+            }
+          } catch (err) {
+            console.warn('[friendService] Falha no auto-join do destinatário na nova sala:', err.message)
+          }
+        }
       }
     } catch (err) {
       console.warn('[friendService] Falha ao criar sala direta no Synapse:', err.message)
@@ -479,8 +523,12 @@ export async function getOrCreateDirectRoom(userId, targetUserId, accessToken, d
   }
 
   if (!roomId) {
-    const cleanUser = targetUserId.replace(/[@:]/g, '_')
-    roomId = `!dm_${cleanUser}_${Date.now()}:${process.env.SYNAPSE_SERVER_NAME || 'litteris.online'}`
+    if (process.env.NODE_ENV === 'test') {
+      const cleanUser = targetUserId.replace(/[@:]/g, '_')
+      roomId = `!dm_${cleanUser}_${Date.now()}:${process.env.SYNAPSE_SERVER_NAME || 'litteris.online'}`
+    } else {
+      throw new Error('Não foi possível criar a sala de mensagem direta no Synapse')
+    }
   }
 
   if (friendship) {

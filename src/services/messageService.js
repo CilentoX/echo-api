@@ -17,7 +17,7 @@ import { saveChatMedia } from './chatMediaService.js'
  * @throws {Error} If the message send fails or media resolution fails
  */
 export async function sendMessage(roomId, { body, msgtype, mediaId, accessToken, userId }) {
-  const baseUrl = process.env.SYNAPSE_URL || 'http://localhost:8008'
+  const baseUrl = process.env.SYNAPSE_URL || 'https://echo.litteris.online'
   const client = getMatrixClient(userId, accessToken, baseUrl)
 
   // If mediaId is provided, resolve it to mxcUri via chatMediaService
@@ -65,17 +65,34 @@ export async function sendMessage(roomId, { body, msgtype, mediaId, accessToken,
   }
 
   // Send the message via Matrix
-  // Use sendEvent for media types, sendMessage for text
   let eventId, timestamp
 
-  if (effectiveMsgtype === 'm.text') {
-    const result = await client.sendMessage(roomId, content)
+  const doSend = async () => {
+    if (effectiveMsgtype === 'm.text') {
+      return client.sendMessage(roomId, content)
+    } else {
+      return client.sendEvent(roomId, 'm.room.message', content, null)
+    }
+  }
+
+  try {
+    const result = await doSend()
     eventId = result.event_id
     timestamp = result.timestamp
-  } else {
-    const result = await client.sendEvent(roomId, 'm.room.message', content, null)
-    eventId = result.event_id
-    timestamp = result.timestamp
+  } catch (err) {
+    const isForbidden = err?.errcode === 'M_FORBIDDEN' || err?.httpStatus === 403 || String(err?.message).includes('not in this room')
+    if (isForbidden && typeof client.joinRoom === 'function') {
+      try {
+        await client.joinRoom(roomId)
+        const retryResult = await doSend()
+        eventId = retryResult.event_id
+        timestamp = retryResult.timestamp
+      } catch {
+        throw err
+      }
+    } else {
+      throw err
+    }
   }
 
   return { eventId, timestamp }
@@ -94,7 +111,7 @@ export async function sendMessage(roomId, { body, msgtype, mediaId, accessToken,
  * @throws {Error} If the edit fails
  */
 export async function editMessage(roomId, eventId, { body, accessToken, userId }) {
-  const baseUrl = process.env.SYNAPSE_URL || 'http://localhost:8008'
+  const baseUrl = process.env.SYNAPSE_URL || 'https://echo.litteris.online'
   const client = getMatrixClient(userId, accessToken, baseUrl)
 
   // Use m.replace to edit the message
@@ -116,7 +133,7 @@ export async function editMessage(roomId, eventId, { body, accessToken, userId }
  * @throws {Error} If the redaction fails
  */
 export async function redactMessage(roomId, eventId, { accessToken, userId }) {
-  const baseUrl = process.env.SYNAPSE_URL || 'http://localhost:8008'
+  const baseUrl = process.env.SYNAPSE_URL || 'https://echo.litteris.online'
   const client = getMatrixClient(userId, accessToken, baseUrl)
 
   // Use the Matrix client to redact the event
@@ -138,7 +155,7 @@ export async function redactMessage(roomId, eventId, { accessToken, userId }) {
  * @throws {Error} If the reaction fails
  */
 export async function reactToMessage(roomId, eventId, { key, accessToken, userId }) {
-  const baseUrl = process.env.SYNAPSE_URL || 'http://localhost:8008'
+  const baseUrl = process.env.SYNAPSE_URL || 'https://echo.litteris.online'
   const client = getMatrixClient(userId, accessToken, baseUrl)
 
   // Use m.reaction with m.relates_to
@@ -159,20 +176,43 @@ export async function reactToMessage(roomId, eventId, { key, accessToken, userId
  * @returns {Promise<Array<Object>>} Formatted array of message events
  */
 export async function getOlderMessages(roomId, { limit = 20, from, accessToken, userId }) {
-  const baseUrl = process.env.SYNAPSE_URL || 'http://localhost:8008'
+  const baseUrl = process.env.SYNAPSE_URL || 'https://echo.litteris.online'
   const encodedRoomId = encodeURIComponent(roomId)
   let url = `${baseUrl}/_matrix/client/v3/rooms/${encodedRoomId}/messages?dir=b&limit=${encodeURIComponent(limit)}`
   if (from) {
     url += `&from=${encodeURIComponent(from)}`
   }
 
-  const res = await fetch(url, {
+  let res = await fetch(url, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${accessToken}`,
       Accept: 'application/json',
     },
   })
+
+  // Se o usuário não tiver entrado na sala ainda (403), tenta entrar e refaz a busca
+  if (res.status === 403) {
+    try {
+      const joinRes = await fetch(`${baseUrl}/_matrix/client/v3/join/${encodedRoomId}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      })
+      if (joinRes.ok) {
+        res = await fetch(url, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            Accept: 'application/json',
+          },
+        })
+      }
+    } catch {}
+  }
 
   if (!res.ok) {
     if (res.status === 404 || res.status === 403) {
