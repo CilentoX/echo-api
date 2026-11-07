@@ -8,7 +8,7 @@ import { authenticate } from '../plugins/auth.js'
 const channelVoiceState = new Map()
 const signalQueues = new Map()
 
-const HEARTBEAT_TIMEOUT_MS = 25000 // 25s sem heartbeat remove o participante
+const HEARTBEAT_TIMEOUT_MS = 10000 // 10s sem heartbeat remove o participante (heartbeat cliente a cada 2s)
 
 function normalizeChannelId(id) {
   if (!id) return ''
@@ -32,6 +32,26 @@ function pruneStaleParticipants(channelId) {
   if (channel.size === 0) {
     channelVoiceState.delete(normId)
   }
+}
+
+function pruneAllStaleParticipants() {
+  const now = Date.now()
+  for (const [channelId, channel] of channelVoiceState.entries()) {
+    for (const [userId, participant] of channel.entries()) {
+      if (now - participant.lastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
+        channel.delete(userId)
+      }
+    }
+    if (channel.size === 0) {
+      channelVoiceState.delete(channelId)
+    }
+  }
+}
+
+// Limpeza periódica em segundo plano para canais inativos
+const backgroundPruner = setInterval(pruneAllStaleParticipants, 4000)
+if (typeof backgroundPruner.unref === 'function') {
+  backgroundPruner.unref()
 }
 
 function removeUserFromAllChannels(userId) {
@@ -106,7 +126,7 @@ export function registerVoiceRoutes(app) {
     async (request, reply) => {
       const channelId = normalizeChannelId(request.params.channelId)
       const userId = request.user.userId
-      const { isSpeaking, isMuted, isDeafened } = request.body || {}
+      const { isSpeaking, isMuted, isDeafened, guildId, username, avatarUrl } = request.body || {}
 
       pruneStaleParticipants(channelId)
 
@@ -118,9 +138,9 @@ export function registerVoiceRoutes(app) {
         }
         channel.set(userId, {
           userId,
-          username: userId.replace(/^@/, '').split(':')[0],
-          avatarUrl: null,
-          guildId: null,
+          username: username || userId.replace(/^@/, '').split(':')[0],
+          avatarUrl: avatarUrl || null,
+          guildId: guildId ? normalizeChannelId(guildId) : null,
           isMuted: Boolean(isMuted),
           isDeafened: Boolean(isDeafened),
           isSpeaking: Boolean(isSpeaking),
@@ -132,6 +152,9 @@ export function registerVoiceRoutes(app) {
         if (typeof isSpeaking === 'boolean') participant.isSpeaking = isSpeaking
         if (typeof isMuted === 'boolean') participant.isMuted = isMuted
         if (typeof isDeafened === 'boolean') participant.isDeafened = isDeafened
+        if (guildId && !participant.guildId) participant.guildId = normalizeChannelId(guildId)
+        if (username && participant.username === userId.replace(/^@/, '').split(':')[0]) participant.username = username
+        if (avatarUrl && !participant.avatarUrl) participant.avatarUrl = avatarUrl
       }
 
       const participants = Array.from(channel.values()).map((p) => ({
@@ -185,8 +208,9 @@ export function registerVoiceRoutes(app) {
       const guildId = rawGuildId ? normalizeChannelId(rawGuildId) : ''
       const channels = {}
 
+      pruneAllStaleParticipants()
+
       for (const [chId, channel] of channelVoiceState.entries()) {
-        pruneStaleParticipants(chId)
         const participants = []
         for (const p of channel.values()) {
           if (!guildId || p.guildId === guildId || !p.guildId) {
