@@ -109,4 +109,44 @@ describe('authService - initiateGoogleSso', () => {
       await expect(authService.exchangeCodeForTokens(null, 'test-state')).rejects.toThrow()
     })
   })
+
+  describe('authService - refreshTokens', () => {
+    beforeEach(() => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          access_token: 'new-access-token-999',
+          refresh_token: 'new-refresh-token-999',
+          expires_in_ms: 300000,
+        }),
+      })
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('should refresh access and refresh token via Synapse refresh endpoint', async () => {
+      const result = await authService.refreshTokens('old-refresh-token')
+
+      expect(result).toHaveProperty('accessToken')
+      expect(result).toHaveProperty('refreshToken')
+      expect(result.accessToken).toBe('new-access-token-999')
+      expect(result.refreshToken).toBe('new-refresh-token-999')
+      expect(result.expiresInMs).toBe(300000)
+    })
+
+    it('should throw error when refreshToken is missing', async () => {
+      await expect(authService.refreshTokens(null)).rejects.toThrow('Invalid or missing refreshToken parameter')
+    })
+
+    it('should throw error when Synapse returns an error', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        text: async () => 'Invalid refresh token',
+      })
+
+      await expect(authService.refreshTokens('bad-token')).rejects.toThrow('Failed to refresh token: Invalid refresh token')
+    })
+  })
 })

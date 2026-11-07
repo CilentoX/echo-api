@@ -85,3 +85,68 @@ export async function exchangeCodeForTokens(code, state, prisma = null) {
 
   return result
 }
+
+/**
+ * Refreshes an access token using Synapse's /_matrix/client/v3/refresh endpoint.
+ *
+ * @param {string} refreshToken - The Matrix refresh token
+ * @param {object} [prisma] - The Prisma client instance
+ * @returns {Promise<{ accessToken: string, refreshToken: string, expiresInMs?: number, userId?: string }>}
+ */
+export async function refreshTokens(refreshToken, prisma = null) {
+  if (!refreshToken || typeof refreshToken !== 'string') {
+    throw new Error('Invalid or missing refreshToken parameter')
+  }
+
+  const synapseUrl = process.env.SYNAPSE_URL || 'https://echo.litteris.online'
+  const synapseResponse = await fetch(`${synapseUrl}/_matrix/client/v3/refresh`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      refresh_token: refreshToken,
+    }),
+  })
+
+  if (!synapseResponse.ok) {
+    const errorText = await synapseResponse.text()
+    throw new Error(`Failed to refresh token: ${errorText}`)
+  }
+
+  const data = await synapseResponse.json()
+  const result = {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token || refreshToken,
+    expiresInMs: data.expires_in_ms,
+  }
+
+  if (prisma && data.access_token) {
+    try {
+      const { decrypt, storeUserTokensDB } = await import('../lib/auth/tokenStore.js')
+      const users = await prisma.userToken.findMany()
+      for (const user of users) {
+        if (user.refreshToken) {
+          try {
+            const dec = decrypt(user.refreshToken)
+            if (dec === refreshToken) {
+              await storeUserTokensDB(
+                prisma,
+                user.userId,
+                result.accessToken,
+                result.refreshToken,
+                user.deviceId
+              )
+              result.userId = user.userId
+              break
+            }
+          } catch {}
+        }
+      }
+    } catch (err) {
+      console.error('[authService] Error updating user token in DB on refresh:', err)
+    }
+  }
+
+  return result
+}

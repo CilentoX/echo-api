@@ -1,6 +1,7 @@
 import './polyfill.js'
 import Fastify from 'fastify'
 import multipart from '@fastify/multipart'
+import rateLimit from '@fastify/rate-limit'
 import { PrismaClient } from '@prisma/client'
 import { proxyToMatrix } from './lib/matrix/proxy.js'
 import { handleSyncProxy } from './lib/matrix/syncProxy.js'
@@ -23,6 +24,24 @@ const app = Fastify({ logger: true, ignoreTrailingSlash: true })
 await app.register(multipart, {
   limits: {
     fileSize: 10 * 1024 * 1024, // 10 MB
+  },
+})
+
+// Proteção contra brute-force e abuso com rate limiting
+await app.register(rateLimit, {
+  global: true,
+  max: process.env.NODE_ENV === 'test' ? 10000 : 300,
+  timeWindow: '1 minute',
+  allowList: (req) => {
+    const url = req.url || ''
+    return (
+      url.startsWith('/health') ||
+      url.startsWith('/livez') ||
+      url.startsWith('/readyz') ||
+      url.startsWith('/api/health') ||
+      url === '/' ||
+      url.startsWith('/matrix/sync')
+    )
   },
 })
 

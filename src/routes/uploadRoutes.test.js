@@ -19,10 +19,24 @@ vi.mock("../services/uploadService.js", () => ({
   deleteFile: (...args) => mockDeleteFile(...args),
 }));
 
+// Mock auth middleware
+vi.mock("../plugins/auth.js", () => ({
+  authenticate: vi.fn(async (request, reply) => {
+    const authHeader = request.headers["authorization"];
+    const apiKey = request.headers["x-api-key"];
+    if (!authHeader && !apiKey) {
+      reply.code(401).send({ error: "Unauthorized: authentication required" });
+      return;
+    }
+    request.user = { userId: "test-user", accessToken: "test-token" };
+  }),
+}));
+
 import { uploadRoutes } from "./uploadRoutes.js";
 
-describe("POST /api/upload/", () => {
+describe("Upload Routes Authentication & Operations", () => {
   let app;
+  const authHeaders = { authorization: "Bearer valid-token" };
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -37,7 +51,30 @@ describe("POST /api/upload/", () => {
     await app.close();
   });
 
-  it("faz upload de arquivo e retorna metadados", async () => {
+  it("retorna 401 no POST /api/upload/ sem autenticação", async () => {
+    const boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
+    const payload = Buffer.concat([
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="test.ogg"\r\nContent-Type: audio/ogg\r\n\r\n`
+      ),
+      Buffer.from("fake audio data"),
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/upload/",
+      headers: {
+        "content-type": `multipart/form-data; boundary=${boundary}`,
+      },
+      payload,
+    });
+
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error).toContain("Unauthorized");
+  });
+
+  it("faz upload de arquivo com autenticação e retorna metadados", async () => {
     const mockResult = {
       fileId: "test-file-id",
       url: "/api/uploads/test-file-id",
@@ -62,6 +99,7 @@ describe("POST /api/upload/", () => {
       url: "/api/upload/",
       headers: {
         "content-type": `multipart/form-data; boundary=${boundary}`,
+        ...authHeaders,
       },
       payload,
     });
@@ -76,7 +114,7 @@ describe("POST /api/upload/", () => {
     expect(mockSaveFile).toHaveBeenCalledTimes(1);
   });
 
-  it("retorna 400 quando nenhum arquivo é enviado", async () => {
+  it("retorna 400 quando nenhum arquivo é enviado com autenticação", async () => {
     const boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
     const payload = Buffer.from(`--${boundary}--\r\n`);
 
@@ -85,6 +123,7 @@ describe("POST /api/upload/", () => {
       url: "/api/upload/",
       headers: {
         "content-type": `multipart/form-data; boundary=${boundary}`,
+        ...authHeaders,
       },
       payload,
     });
@@ -92,7 +131,17 @@ describe("POST /api/upload/", () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it("DELETE /api/upload/:fileId deleta arquivo", async () => {
+  it("retorna 401 no DELETE /api/upload/:fileId sem autenticação", async () => {
+    const res = await app.inject({
+      method: "DELETE",
+      url: "/api/upload/test-file-id",
+    });
+
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error).toContain("Unauthorized");
+  });
+
+  it("DELETE /api/upload/:fileId deleta arquivo quando autenticado", async () => {
     mockDeleteFile.mockResolvedValue({ deleted: true });
 
     const res = await app.inject({
@@ -115,9 +164,7 @@ describe("POST /api/upload/", () => {
     const res = await app.inject({
       method: "DELETE",
       url: "/api/upload/nonexistent",
-      headers: {
-        "x-api-key": "test-api-key",
-      },
+      headers: authHeaders,
     });
 
     expect(res.statusCode).toBe(200);

@@ -96,4 +96,40 @@ describe('messageRoutes', () => {
       expect(Array.isArray(data)).toBe(true)
     })
   })
+
+  describe('Redaction / Message Deletion', () => {
+    it('DELETE /api/rooms/:roomId/messages/:eventId exclui mensagem com auth', async () => {
+      const res = await app.inject({
+        method: 'DELETE',
+        url: '/api/rooms/!r1:hs/messages/$ev123',
+        headers: authHeaders,
+      })
+      expect(res.statusCode).toBe(200)
+      expect(messageService.redactMessage).toHaveBeenCalledWith('!r1:hs', '$ev123', expect.objectContaining({
+        accessToken: 'syt_fake_token',
+        userId: '@alice:litteris.online',
+      }))
+    })
+
+    it('PUT /api/rooms/:roomId/redact/:eventId exclui mensagem via alias com auth', async () => {
+      const res = await app.inject({
+        method: 'PUT',
+        url: '/api/rooms/!r1:hs/redact/$ev123',
+        headers: authHeaders,
+      })
+      expect(res.statusCode).toBe(200)
+      expect(messageService.redactMessage).toHaveBeenCalledWith('!r1:hs', '$ev123', expect.objectContaining({
+        accessToken: 'syt_fake_token',
+        userId: '@alice:litteris.online',
+      }))
+    })
+
+    it('retorna 401 ao tentar excluir sem auth', async () => {
+      const res = await app.inject({
+        method: 'DELETE',
+        url: '/api/rooms/!r1:hs/messages/$ev123',
+      })
+      expect(res.statusCode).toBe(401)
+    })
+  })
 })

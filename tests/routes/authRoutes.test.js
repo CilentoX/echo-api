@@ -16,6 +16,15 @@ vi.mock('@/services/authService.js', () => ({
       userId: '@testuser:example.com',
     }
   }),
+  refreshTokens: vi.fn((refreshToken) => {
+    if (refreshToken === 'invalid-refresh-token') {
+      throw new Error('Invalid refresh token')
+    }
+    return {
+      accessToken: 'refreshed-access-token',
+      refreshToken: 'refreshed-refresh-token',
+    }
+  }),
 }))
 
 import Fastify from 'fastify'
@@ -198,23 +207,18 @@ describe('authRoutes - Google SSO login endpoint', () => {
     })
 
     it('should return 400 with error when refresh fails', async () => {
-      // The refresh route has its own error handling - test that it catches errors
-      // Since the route doesn't call exchangeCodeForTokens, we test the validation directly
-      // by making refreshToken empty to trigger the 400 response
+      vi.mocked(authService.refreshTokens).mockRejectedValueOnce(new Error('Invalid refresh token'))
 
-      // Actually, let's test that the route properly handles errors
-      // The current route just generates a new token, so let's verify it works
       const response = await app.inject({
         method: 'POST',
         url: '/auth/refresh',
         body: {
-          refreshToken: 'test-refresh-token',
+          refreshToken: 'invalid-refresh-token',
         },
       })
 
-      expect(response.statusCode).toBe(200)
-      expect(response.json()).toHaveProperty('accessToken')
-      expect(response.json()).toHaveProperty('refreshToken')
+      expect(response.statusCode).toBe(400)
+      expect(response.json()).toEqual({ error: 'Invalid refresh token' })
     })
   })
 })

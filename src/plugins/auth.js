@@ -84,7 +84,53 @@ async function resolveUser(prisma, userId) {
   }
 }
 
-const synapseTokenCache = new Map()
+/**
+ * Bounded LRU token cache with TTL expiration.
+ * Prevents unbounded memory growth and DoS attacks via brute-force token flooding.
+ */
+class BoundedTokenCache {
+  constructor(maxSize = 5000) {
+    this.maxSize = maxSize
+    this.cache = new Map()
+  }
+
+  get(key) {
+    const item = this.cache.get(key)
+    if (!item) return null
+    if (Date.now() > item.expiresAt) {
+      this.cache.delete(key)
+      return null
+    }
+    // Refresh LRU order
+    this.cache.delete(key)
+    this.cache.set(key, item)
+    return item
+  }
+
+  set(key, value) {
+    if (this.cache.size >= this.maxSize) {
+      const oldestKey = this.cache.keys().next().value
+      if (oldestKey !== undefined) {
+        this.cache.delete(oldestKey)
+      }
+    }
+    this.cache.set(key, value)
+  }
+
+  delete(key) {
+    return this.cache.delete(key)
+  }
+
+  clear() {
+    this.cache.clear()
+  }
+
+  get size() {
+    return this.cache.size
+  }
+}
+
+export const synapseTokenCache = new BoundedTokenCache(5000)
 
 /**
  * Validates a Matrix access token directly against Synapse.

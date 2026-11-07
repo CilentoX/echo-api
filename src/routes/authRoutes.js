@@ -1,5 +1,5 @@
 import Fastify from 'fastify'
-import { initiateGoogleSso, exchangeCodeForTokens } from '../services/authService.js'
+import { initiateGoogleSso, exchangeCodeForTokens, refreshTokens } from '../services/authService.js'
 
 /**
  * Registers Google SSO authentication routes.
@@ -129,16 +129,9 @@ export function registerAuthRoutes(app) {
     }
 
     try {
-      // In a real implementation, this would call Synapse's token refresh endpoint
-      // or use the jose library to refresh the token
-      // For now, we return a mock response
-      const newAccessToken = `new-access-token-${Date.now()}`
-      const newRefreshToken = refreshToken
-
-      reply.send({
-        accessToken: newAccessToken,
-        refreshToken: newRefreshToken,
-      })
+      const prisma = typeof request.prisma === 'function' ? request.prisma() : null
+      const tokens = await refreshTokens(refreshToken, prisma)
+      reply.send(tokens)
     } catch (error) {
       reply.code(400).send({ error: error.message })
     }

@@ -1,11 +1,13 @@
 import fs from "fs";
 import path from "path";
 import uploadService, { saveFile, deleteFile, getUploadsDir } from "../services/uploadService.js";
+import { authenticate } from "../plugins/auth.js";
 
 export async function uploadRoutes(fastify, opts) {
-  // POST /api/upload e /api/upload/
+  // POST /api/upload e /api/upload/ (Requer autenticação)
   fastify.post(
     "/",
+    { preHandler: [authenticate] },
     async (request, reply) => {
       try {
         const data = await request.file();
@@ -25,7 +27,7 @@ export async function uploadRoutes(fastify, opts) {
     }
   );
 
-  // GET /api/upload/:fileId e /api/uploads/:fileId
+  // GET /api/upload/:fileId e /api/uploads/:fileId (Público para renderização de mídias em tags <img> e <audio>)
   fastify.get(
     "/:fileId",
     async (request, reply) => {
@@ -52,10 +54,13 @@ export async function uploadRoutes(fastify, opts) {
     }
   );
 
-  // DELETE /api/upload/:fileId
+  // DELETE /api/upload/:fileId (Requer autenticação)
   fastify.delete(
     "/:fileId",
-    { param: { type: "object", properties: { fileId: { type: "string" } } } },
+    {
+      preHandler: [authenticate],
+      param: { type: "object", properties: { fileId: { type: "string" } } },
+    },
     async (request, reply) => {
       const { fileId } = request.params;
       const deleteFn = uploadService?.deleteFile || deleteFile;

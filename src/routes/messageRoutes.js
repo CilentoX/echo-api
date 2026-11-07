@@ -173,6 +173,8 @@ export function registerMessageRoutes(app) {
 
   app.delete('/api/rooms/:roomId/messages/:eventId', { preHandler: authenticate }, handleDeleteMessage)
   app.delete('/rooms/:roomId/messages/:eventId', { preHandler: authenticate }, handleDeleteMessage)
+  app.put('/api/rooms/:roomId/redact/:eventId', { preHandler: authenticate }, handleDeleteMessage)
+  app.put('/rooms/:roomId/redact/:eventId', { preHandler: authenticate }, handleDeleteMessage)
 
   /**
    * POST /api/rooms/:roomId/messages/:eventId/reactions

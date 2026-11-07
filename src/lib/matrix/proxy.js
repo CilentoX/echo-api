@@ -1,3 +1,33 @@
+const FORBIDDEN_PATTERNS = [
+  /\/admin\b/i,
+  /_synapse\/admin/i,
+  /\/_matrix\/federation/i,
+  /_matrix\/key/i,
+]
+
+const ALLOWED_PREFIXES = [
+  '/_matrix/client/',
+  '/_matrix/media/',
+]
+
+/**
+ * Validates if the requested Matrix path is permitted through the public proxy.
+ * Prevents unauthorized access to Synapse admin and federation endpoints.
+ *
+ * @param {string} matrixPath - The target Matrix path
+ * @returns {boolean} True if the path is permitted
+ */
+export function isPathAllowed(matrixPath) {
+  if (!matrixPath || typeof matrixPath !== 'string') return false
+  const normalized = matrixPath.startsWith('/') ? matrixPath : `/${matrixPath}`
+
+  if (FORBIDDEN_PATTERNS.some(pattern => pattern.test(normalized))) {
+    return false
+  }
+
+  return ALLOWED_PREFIXES.some(prefix => normalized.startsWith(prefix))
+}
+
 /**
  * Generic HTTP proxy that forwards requests to Synapse with auth injection.
  *
@@ -16,6 +46,11 @@ export async function proxyToMatrix(request, reply, matrixPath) {
 
   if (!accessToken) {
     reply.code(401).send({ error: 'Unauthorized: no access token' })
+    return
+  }
+
+  if (!isPathAllowed(matrixPath)) {
+    reply.code(403).send({ error: 'Forbidden: access to this Matrix endpoint is not permitted via proxy' })
     return
   }
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest'
 import Fastify from 'fastify'
 import { encrypt } from '../src/lib/auth/tokenStore.js'
-import { setupPrismaClient, authenticate, createTestJwt } from '../src/plugins/auth.js'
+import { setupPrismaClient, authenticate, createTestJwt, synapseTokenCache } from '../src/plugins/auth.js'
 
 // Use a valid base64-encoded 32-byte key for tests (openssl rand -base64 32)
 const TEST_ENCRYPTION_KEY = 'BqMY9SmbfN4+b2UP8JP2+MpIk/HfSseOX3KTw2Nby+E='
@@ -193,5 +193,41 @@ describe('Auth Middleware - Bearer Token', () => {
 
     expect(response.statusCode).toBe(401)
     expect(response.json().error).toContain('Unauthorized')
+  })
+})
+
+describe('synapseTokenCache (LRU Bounded Cache)', () => {
+  beforeEach(() => {
+    synapseTokenCache.clear()
+  })
+
+  it('stores and retrieves cached tokens within TTL', () => {
+    synapseTokenCache.set('token-1', { user: { userId: 'alice' }, expiresAt: Date.now() + 5000 })
+    const cached = synapseTokenCache.get('token-1')
+    expect(cached).toEqual({ user: { userId: 'alice' }, expiresAt: expect.any(Number) })
+  })
+
+  it('evicts expired tokens automatically', () => {
+    synapseTokenCache.set('token-exp', { user: { userId: 'bob' }, expiresAt: Date.now() - 100 })
+    const cached = synapseTokenCache.get('token-exp')
+    expect(cached).toBeNull()
+    expect(synapseTokenCache.size).toBe(0)
+  })
+
+  it('enforces maximum capacity and evicts oldest entry', () => {
+    const originalMax = synapseTokenCache.maxSize
+    synapseTokenCache.maxSize = 2
+    try {
+      synapseTokenCache.set('t1', { user: { userId: 'u1' }, expiresAt: Date.now() + 10000 })
+      synapseTokenCache.set('t2', { user: { userId: 'u2' }, expiresAt: Date.now() + 10000 })
+      // Adding a 3rd should evict t1
+      synapseTokenCache.set('t3', { user: { userId: 'u3' }, expiresAt: Date.now() + 10000 })
+      expect(synapseTokenCache.size).toBe(2)
+      expect(synapseTokenCache.get('t1')).toBeNull()
+      expect(synapseTokenCache.get('t2')).not.toBeNull()
+      expect(synapseTokenCache.get('t3')).not.toBeNull()
+    } finally {
+      synapseTokenCache.maxSize = originalMax
+    }
   })
 })

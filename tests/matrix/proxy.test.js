@@ -109,4 +109,43 @@ describe('Generic Matrix Proxy', () => {
 
     expect(reply.send).toBeCalled()
   })
+
+  it('rejects access to admin endpoints with 403 Forbidden', async () => {
+    const accessToken = 'admin-hunter'
+    const matrixPath = '/_synapse/admin/v1/users'
+
+    const request = {
+      method: 'GET',
+      url: matrixPath,
+      headers: {},
+      user: { accessToken },
+    }
+
+    const reply = createReply()
+
+    await matrixProxy.proxyToMatrix(request, reply, matrixPath)
+
+    expect(reply.code).toHaveBeenCalledWith(403)
+    expect(reply.send).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.stringContaining('Forbidden') })
+    )
+  })
+
+  it('rejects access to federation endpoints with 403 Forbidden', async () => {
+    const accessToken = 'fed-token'
+    const matrixPath = '/_matrix/federation/v1/send/123'
+
+    const request = {
+      method: 'GET',
+      url: matrixPath,
+      headers: {},
+      user: { accessToken },
+    }
+
+    const reply = createReply()
+
+    await matrixProxy.proxyToMatrix(request, reply, matrixPath)
+
+    expect(reply.code).toHaveBeenCalledWith(403)
+  })
 })
