@@ -456,6 +456,13 @@ export async function getOrCreateDirectRoom(userId, targetUserId, accessToken, d
     },
   })
 
+  // Se o usuário estiver bloqueado (em qualquer sentido), impede abertura de DM
+  if (friendship?.status === 'blocked') {
+    const error = new Error('Não é possível iniciar conversa com usuário bloqueado')
+    error.statusCode = 403
+    throw error
+  }
+
   // Se já houver um directRoomId válido gravado (não-mock), garante que ambos os participantes estejam na sala
   if (friendship?.directRoomId && !friendship.directRoomId.startsWith('!dm_')) {
     const existingRoomId = friendship.directRoomId

@@ -173,5 +173,21 @@ describe('friendRoutes', () => {
       expect(res.statusCode).toBe(200)
       expect(res.json().roomId).toBe('!direct_room_1:litteris.online')
     })
+
+    it('POST /api/friends/dm deve retornar 403 se usuário estiver bloqueado', async () => {
+      const err = new Error('Não é possível iniciar conversa com usuário bloqueado')
+      err.statusCode = 403
+      vi.spyOn(friendService, 'getOrCreateDirectRoom').mockRejectedValue(err)
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/friends/dm',
+        headers: authHeaders,
+        body: { targetUserId: '@blocked:litteris.online' },
+      })
+
+      expect(res.statusCode).toBe(403)
+      expect(res.json().error).toContain('bloqueado')
+    })
   })
 })

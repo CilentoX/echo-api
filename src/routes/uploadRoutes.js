@@ -42,12 +42,11 @@ export async function uploadRoutes(fastify, opts) {
       }
 
       let mimeType = "application/octet-stream";
-      if (fs.existsSync(metaPath)) {
-        try {
-          const meta = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
-          if (meta.mimeType) mimeType = meta.mimeType;
-        } catch {}
-      }
+      try {
+        const metaContent = await fs.promises.readFile(metaPath, "utf-8");
+        const meta = JSON.parse(metaContent);
+        if (meta.mimeType) mimeType = meta.mimeType;
+      } catch {}
 
       const stream = fs.createReadStream(filePath);
       return reply.type(mimeType).send(stream);

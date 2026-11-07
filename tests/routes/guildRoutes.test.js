@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import Fastify from 'fastify'
 import { registerGuildRoutes } from '@/routes/guildRoutes.js'
 import { guildProfileService } from '@/services/guildProfileService.js'
+import { synapseTokenCache } from '@/plugins/auth.js'
 
 describe('guildRoutes', () => {
   let app
@@ -94,6 +95,102 @@ describe('guildRoutes', () => {
       const data = JSON.parse(res.payload)
       expect(data.name).toBe('Echo Community')
       expect(data.guildId).toBe('!space:matrix')
+    })
+  })
+
+  describe('Channel management endpoints', () => {
+    const testToken = 'valid-test-token'
+    beforeEach(() => {
+      synapseTokenCache.set(testToken, {
+        user: { userId: '@tester:litteris.online', accessToken: testToken },
+        expiresAt: Date.now() + 60000,
+      })
+    })
+
+    it('PATCH /api/channels/:channelId deve atualizar metadados do canal', async () => {
+      vi.spyOn(guildProfileService, 'updateChannel').mockResolvedValue({
+        channelId: '!chan1:matrix',
+        name: 'novo-canal',
+        topic: 'Novo tópico',
+        category: 'GERAL',
+        type: 'text',
+      })
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/api/channels/!chan1:matrix',
+        headers: { authorization: `Bearer ${testToken}` },
+        body: { name: 'novo-canal', topic: 'Novo tópico' },
+      })
+
+      expect(res.statusCode).toBe(200)
+      const data = JSON.parse(res.payload)
+      expect(data.name).toBe('novo-canal')
+      expect(guildProfileService.updateChannel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channelId: '!chan1:matrix',
+          name: 'novo-canal',
+        })
+      )
+    })
+
+    it('POST /channels/edit (legado) deve suportar atualização de canal', async () => {
+      vi.spyOn(guildProfileService, 'updateChannel').mockResolvedValue({
+        channelId: '!chan2:matrix',
+        name: 'canal-editado',
+        topic: 'Tópico',
+        category: 'GERAL',
+        type: 'text',
+      })
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/channels/edit',
+        headers: { authorization: `Bearer ${testToken}` },
+        body: { channelId: '!chan2:matrix', data: { name: 'canal-editado' } },
+      })
+
+      expect(res.statusCode).toBe(200)
+      const data = JSON.parse(res.payload)
+      expect(data.name).toBe('canal-editado')
+    })
+
+    it('DELETE /api/channels/:channelId deve excluir o canal', async () => {
+      vi.spyOn(guildProfileService, 'deleteChannel').mockResolvedValue({
+        success: true,
+        channelId: '!chan1:matrix',
+      })
+
+      const res = await app.inject({
+        method: 'DELETE',
+        url: '/api/channels/!chan1:matrix',
+        headers: { authorization: `Bearer ${testToken}` },
+      })
+
+      expect(res.statusCode).toBe(200)
+      const data = JSON.parse(res.payload)
+      expect(data.success).toBe(true)
+      expect(guildProfileService.deleteChannel).toHaveBeenCalledWith(
+        expect.objectContaining({ channelId: '!chan1:matrix' })
+      )
+    })
+
+    it('POST /channels/delete (legado) deve suportar exclusão de canal', async () => {
+      vi.spyOn(guildProfileService, 'deleteChannel').mockResolvedValue({
+        success: true,
+        channelId: '!chan2:matrix',
+      })
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/channels/delete',
+        headers: { authorization: `Bearer ${testToken}` },
+        body: { channelId: '!chan2:matrix' },
+      })
+
+      expect(res.statusCode).toBe(200)
+      const data = JSON.parse(res.payload)
+      expect(data.success).toBe(true)
     })
   })
 })

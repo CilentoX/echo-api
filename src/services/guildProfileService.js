@@ -287,30 +287,105 @@ export const guildProfileService = {
   },
 
   /**
-   * Update a channel's Matrix Room settings.
+   * Update a channel's Matrix Room settings and ChannelProfile.
    */
   async updateChannel(data) {
-    const { guildId, channelId, topic, userId } = data
+    const { channelId, name, topic, category, type, userId } = data
     const accessToken = data.accessToken
 
-    await spaceSync.updateRoom(accessToken, channelId || guildId, undefined, topic, undefined, userId)
+    if (!channelId) {
+      const err = new Error('channelId é obrigatório')
+      err.statusCode = 400
+      throw err
+    }
 
-    const channel = await prisma.channelProfile.upsert({
+    const existing = await prisma.channelProfile.findUnique({
       where: { matrixRoomId: channelId },
-      update: {
-        topic,
-        updatedAt: new Date(),
-      },
-      create: {
-        guildId,
-        matrixRoomId: channelId,
-        name: channelId,
-        topic,
-        type: 'text',
-      },
     })
 
-    return channel
+    const guildId = data.guildId || existing?.guildId || channelId
+
+    if (accessToken) {
+      try {
+        await spaceSync.updateRoom(accessToken, channelId, name, topic, undefined, userId)
+      } catch (err) {
+        console.warn('[guildProfileService] Falha ao sincronizar sala no Matrix:', err.message)
+      }
+    }
+
+    const updateData = { updatedAt: new Date() }
+    if (name !== undefined) updateData.name = name
+    if (topic !== undefined) updateData.topic = topic
+    if (category !== undefined) updateData.category = category
+    if (type !== undefined) updateData.type = type
+
+    let channel
+    if (existing) {
+      channel = await prisma.channelProfile.update({
+        where: { matrixRoomId: channelId },
+        data: updateData,
+      })
+    } else {
+      channel = await prisma.channelProfile.create({
+        data: {
+          guildId,
+          matrixRoomId: channelId,
+          name: name || channelId,
+          topic: topic || null,
+          category: category || null,
+          type: type || 'text',
+        },
+      })
+    }
+
+    return {
+      channelId: channel.matrixRoomId,
+      name: channel.name,
+      topic: channel.topic || '',
+      type: channel.type,
+      category: channel.category,
+      unreadCount: 0,
+    }
+  },
+
+  /**
+   * Delete a channel and remove it from its Matrix Space.
+   */
+  async deleteChannel({ channelId, userId, accessToken }) {
+    if (!channelId) {
+      const err = new Error('channelId é obrigatório')
+      err.statusCode = 400
+      throw err
+    }
+
+    const channel = await prisma.channelProfile.findUnique({
+      where: { matrixRoomId: channelId },
+    })
+
+    if (!channel) {
+      const err = new Error('Canal não encontrado')
+      err.statusCode = 404
+      throw err
+    }
+
+    if (accessToken) {
+      try {
+        const client = getMatrixClient(userId || '', accessToken)
+        if (client?.sendStateEvent && channel.guildId) {
+          // Desvincula do space pai
+          await client.sendStateEvent(channel.guildId, 'm.space.child', {}, channelId).catch(() => {})
+        }
+        await spaceSync.deleteRoom(accessToken, channelId, userId).catch(() => {})
+      } catch (err) {
+        console.warn('[guildProfileService] Falha ao remover sala no Matrix:', err.message)
+      }
+    }
+
+    await prisma.channelProfile.delete({
+      where: { matrixRoomId: channelId },
+    })
+
+    return { success: true, channelId }
   },
 
   /**

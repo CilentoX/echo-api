@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import path from "node:path";
 import { uploadService } from "./uploadService.js";
 
@@ -17,6 +18,19 @@ vi.mock("node:fs", () => ({
   writeFileSync: vi.fn(),
   readdirSync: vi.fn(),
   unlinkSync: vi.fn(),
+}));
+
+vi.mock("node:fs/promises", () => ({
+  default: {
+    writeFile: vi.fn(),
+    mkdir: vi.fn(),
+    unlink: vi.fn(),
+    readFile: vi.fn(),
+  },
+  writeFile: vi.fn(),
+  mkdir: vi.fn(),
+  unlink: vi.fn(),
+  readFile: vi.fn(),
 }));
 
 vi.mock("node:path", () => ({
@@ -57,8 +71,8 @@ describe("uploadService.saveFile", () => {
     };
 
     vi.spyOn(fs, "existsSync").mockReturnValue(false);
-    vi.spyOn(fs, "mkdirSync").mockImplementation(() => {});
-    vi.spyOn(fs, "writeFileSync").mockImplementation(() => {});
+    vi.spyOn(fsp, "mkdir").mockResolvedValue();
+    vi.spyOn(fsp, "writeFile").mockResolvedValue();
 
     const result = await uploadService.saveFile(mockFile);
 
@@ -67,17 +81,17 @@ describe("uploadService.saveFile", () => {
     expect(result.url).toBe("/api/uploads/test-uuid-1234");
     expect(result.mimeType).toBe("audio/ogg");
     expect(result.originalName).toBe("audio.ogg");
-    expect(fs.writeFileSync).toHaveBeenCalledTimes(2);
+    expect(fsp.writeFile).toHaveBeenCalledTimes(2);
   });
 
   it("deleteFile remove arquivo existente", async () => {
     vi.spyOn(fs, "existsSync").mockReturnValue(true);
-    vi.spyOn(fs, "unlinkSync").mockImplementation(() => {});
+    vi.spyOn(fsp, "unlink").mockResolvedValue();
 
     const result = await uploadService.deleteFile("test-uuid-1234");
 
     expect(result.deleted).toBe(true);
-    expect(fs.unlinkSync).toHaveBeenCalledWith(
+    expect(fsp.unlink).toHaveBeenCalledWith(
       expect.stringContaining("test-uuid-1234.file")
     );
   });
@@ -88,6 +102,6 @@ describe("uploadService.saveFile", () => {
     const result = await uploadService.deleteFile("nonexistent");
 
     expect(result.deleted).toBe(false);
-    expect(fs.unlinkSync).not.toHaveBeenCalled();
+    expect(fsp.unlink).not.toHaveBeenCalled();
   });
 });

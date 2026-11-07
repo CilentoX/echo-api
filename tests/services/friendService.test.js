@@ -313,6 +313,23 @@ describe('friendService', () => {
 
       expect(res.roomId).toBe('!room123:litteris.online')
     })
+
+    it('deve lançar erro 403 se os usuários tiverem status blocked', async () => {
+      mockDb.friendship.findFirst.mockResolvedValue({
+        id: 'b1',
+        status: 'blocked',
+        blockedById: '@friend:litteris.online',
+      })
+
+      await expect(
+        friendService.getOrCreateDirectRoom(
+          '@me:litteris.online',
+          '@friend:litteris.online',
+          'token123',
+          mockDb
+        )
+      ).rejects.toThrow('Não é possível iniciar conversa com usuário bloqueado')
+    })
   })
 
   describe('discoverUsers', () => {

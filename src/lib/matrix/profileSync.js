@@ -24,3 +24,23 @@ export async function syncDisplayNameToMatrix(userId, accessToken, nickname) {
   const client = getMatrixClient(userId, accessToken)
   await client.setDisplayName(nickname)
 }
+
+/**
+ * Syncs the avatar URL to Matrix for a given user.
+ * Calls Matrix client's setAvatarUrl with the provided avatarUrl.
+ *
+ * @param {string} userId - The Matrix user ID (e.g. "@user:domain")
+ * @param {string} accessToken - The user's access token for Matrix authentication
+ * @param {string} avatarUrl - The avatar URL to set
+ * @returns {Promise<void>}
+ */
+export async function syncAvatarUrlToMatrix(userId, accessToken, avatarUrl) {
+  try {
+    const client = getMatrixClient(userId, accessToken)
+    if (client && typeof client.setAvatarUrl === 'function') {
+      await client.setAvatarUrl(avatarUrl || '')
+    }
+  } catch (err) {
+    console.warn('[profileSync] Falha ao sincronizar avatar com o Matrix:', err.message)
+  }
+}

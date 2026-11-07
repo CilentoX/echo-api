@@ -1,5 +1,5 @@
 import { prisma } from '../db.js'
-import { syncDisplayNameToMatrix } from '../lib/matrix/profileSync.js'
+import { syncDisplayNameToMatrix, syncAvatarUrlToMatrix } from '../lib/matrix/profileSync.js'
 
 /**
  * Validates a username string.
@@ -225,6 +225,14 @@ export async function updateProfile(userId, data = {}, accessToken = null) {
       await syncDisplayNameToMatrix(userId, accessToken, nickname)
     } catch (err) {
       console.error('[userProfileService] Error syncing display name to Matrix:', err)
+    }
+  }
+
+  if (avatarUrl !== undefined && accessToken) {
+    try {
+      await syncAvatarUrlToMatrix(userId, accessToken, avatarUrl)
+    } catch (err) {
+      console.error('[userProfileService] Error syncing avatar URL to Matrix:', err)
     }
   }
 

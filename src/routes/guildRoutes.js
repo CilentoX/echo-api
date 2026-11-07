@@ -139,6 +139,65 @@ export function registerGuildRoutes(app) {
   app.post('/channels', { preHandler: authenticate }, handleCreateChannel)
   app.post('/api/channels', { preHandler: authenticate }, handleCreateChannel)
 
+  const handleUpdateChannel = async (request, reply) => {
+    try {
+      const channelId = request.params?.channelId || request.body?.channelId
+      if (!channelId) {
+        return reply.code(400).send({ error: 'channelId é obrigatório' })
+      }
+      const body = request.body?.data || request.body || {}
+      const { name, topic, category, type, guildId } = body
+
+      const updated = await guildProfileService.updateChannel({
+        channelId,
+        guildId,
+        name: typeof name === 'string' ? name.trim() : undefined,
+        topic: topic !== undefined ? topic : undefined,
+        category: category !== undefined ? category : undefined,
+        type: type !== undefined ? type : undefined,
+        userId: request.user.userId,
+        accessToken: request.user.accessToken,
+      })
+
+      return reply.code(200).send(updated)
+    } catch (err) {
+      request.log.error(err)
+      const status = err.statusCode || 500
+      return reply.code(status).send({ error: 'Erro ao atualizar canal: ' + (err.message || 'desconhecido') })
+    }
+  }
+
+  app.patch('/channels/:channelId', { preHandler: authenticate }, handleUpdateChannel)
+  app.patch('/api/channels/:channelId', { preHandler: authenticate }, handleUpdateChannel)
+  app.post('/channels/edit', { preHandler: authenticate }, handleUpdateChannel)
+  app.post('/api/channels/edit', { preHandler: authenticate }, handleUpdateChannel)
+
+  const handleDeleteChannel = async (request, reply) => {
+    try {
+      const channelId = request.params?.channelId || request.body?.channelId
+      if (!channelId) {
+        return reply.code(400).send({ error: 'channelId é obrigatório' })
+      }
+
+      const result = await guildProfileService.deleteChannel({
+        channelId,
+        userId: request.user.userId,
+        accessToken: request.user.accessToken,
+      })
+
+      return reply.code(200).send(result)
+    } catch (err) {
+      request.log.error(err)
+      const status = err.statusCode || 500
+      return reply.code(status).send({ error: 'Erro ao excluir canal: ' + (err.message || 'desconhecido') })
+    }
+  }
+
+  app.delete('/channels/:channelId', { preHandler: authenticate }, handleDeleteChannel)
+  app.delete('/api/channels/:channelId', { preHandler: authenticate }, handleDeleteChannel)
+  app.post('/channels/delete', { preHandler: authenticate }, handleDeleteChannel)
+  app.post('/api/channels/delete', { preHandler: authenticate }, handleDeleteChannel)
+
   // ── Invites Endpoints ─────────────────────────────────────────────
 
   const handleCreateInvite = async (request, reply) => {

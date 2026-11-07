@@ -1,6 +1,7 @@
 import { createClient } from 'matrix-js-sdk'
-import fs from 'fs'
-import path from 'path'
+import fs from 'node:fs'
+import fsp from 'node:fs/promises'
+import path from 'node:path'
 import { v4 as uuidv4 } from 'uuid'
 
 const clients = new Map()
@@ -26,25 +27,36 @@ export async function saveFile(file) {
   const metaPath = path.join(uploadsDir, `${mediaId}.meta.json`)
 
   if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true })
+    if (fsp?.mkdir) {
+      await fsp.mkdir(uploadsDir, { recursive: true }).catch(() => {})
+    } else {
+      fs.mkdirSync(uploadsDir, { recursive: true })
+    }
   }
 
   const fileContent = typeof file.toBuffer === 'function' ? await file.toBuffer() : file.data
-  fs.writeFileSync(filePath, fileContent)
+  if (fsp?.writeFile) {
+    await fsp.writeFile(filePath, fileContent)
+  } else {
+    fs.writeFileSync(filePath, fileContent)
+  }
 
   const mimeType = file.mimetype || 'application/octet-stream'
   const originalName = file.filename || `${mediaId}.bin`
   const size = file.file ? file.file.length : fileContent.length
 
-  fs.writeFileSync(
-    metaPath,
-    JSON.stringify({
-      mimeType,
-      originalName,
-      size,
-      createdAt: new Date().toISOString(),
-    })
-  )
+  const metaString = JSON.stringify({
+    mimeType,
+    originalName,
+    size,
+    createdAt: new Date().toISOString(),
+  })
+
+  if (fsp?.writeFile) {
+    await fsp.writeFile(metaPath, metaString)
+  } else {
+    fs.writeFileSync(metaPath, metaString)
+  }
 
   const apiBase = process.env.API_BASE_URL || 'https://echo-api.litteris.online'
 
@@ -66,11 +78,19 @@ export async function deleteFile(fileId) {
   const metaPath = path.join(uploadsDir, `${fileId}.meta.json`)
   let deleted = false
   if (fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath)
+    if (fsp?.unlink) {
+      await fsp.unlink(filePath).catch(() => {})
+    } else {
+      fs.unlinkSync(filePath)
+    }
     deleted = true
   }
   if (fs.existsSync(metaPath)) {
-    fs.unlinkSync(metaPath)
+    if (fsp?.unlink) {
+      await fsp.unlink(metaPath).catch(() => {})
+    } else {
+      fs.unlinkSync(metaPath)
+    }
   }
   return { deleted }
 }
