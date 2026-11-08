@@ -16,6 +16,7 @@ import { uploadRoutes } from './routes/uploadRoutes.js'
 import { registerRealtimeRoutes } from './routes/realtimeRoutes.js'
 import { registerFriendRoutes } from './routes/friendRoutes.js'
 import { registerVoiceRoutes } from './routes/voiceRoutes.js'
+import { registerLinkPreviewRoutes } from './routes/linkPreviewRoutes.js'
 import { setupPrismaClient } from './plugins/auth.js'
 
 const app = Fastify({ logger: true, ignoreTrailingSlash: true })
@@ -219,5 +220,6 @@ app.register(uploadRoutes, { prefix: '/api/uploads' })
 registerRealtimeRoutes(app)
 registerFriendRoutes(app)
 registerVoiceRoutes(app)
+registerLinkPreviewRoutes(app)
 
 export default app
