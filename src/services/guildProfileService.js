@@ -63,6 +63,7 @@ export const guildProfileService = {
       avatarUrl: g.avatarUrl || null,
       bannerUrl: g.bannerUrl || null,
       description: g.description || g.topic || null,
+      createdBy: g.createdBy || null,
       unreadCount: 0,
     }))
   },
@@ -179,6 +180,7 @@ export const guildProfileService = {
       guildId: guild.guildId,
       name: guild.name || name,
       avatarUrl: guild.avatarUrl || null,
+      createdBy: guild.createdBy || creator || null,
       unreadCount: 0,
     }
   },
@@ -225,6 +227,43 @@ export const guildProfileService = {
   },
 
   /**
+   * Check if a user has permission to manage channels in a guild.
+   * Allowed if user is the guild creator or has ADMINISTRATOR, MANAGE_GUILD, or MANAGE_CHANNELS role.
+   * @param {string} guildId
+   * @param {string} userId
+   * @returns {Promise<boolean>}
+   */
+  async canUserManageChannels(guildId, userId) {
+    if (!guildId || !userId) return false
+    const guild = await prisma.guildProfile.findUnique({
+      where: { guildId },
+      select: { createdBy: true },
+    })
+    if (!guild) return false
+    // Se a guilda foi criada pelo usuário (ou legada sem createdBy definido)
+    if (!guild.createdBy || guild.createdBy.toLowerCase() === userId.toLowerCase()) {
+      return true
+    }
+
+    try {
+      const memberRoles = await prisma.guildMemberRole.findMany({
+        where: { guildId, userId },
+        include: { role: true },
+      })
+      return memberRoles.some((mr) => {
+        const perms = Array.isArray(mr.role?.permissions) ? mr.role.permissions : []
+        return (
+          perms.includes('ADMINISTRATOR') ||
+          perms.includes('MANAGE_GUILD') ||
+          perms.includes('MANAGE_CHANNELS')
+        )
+      })
+    } catch {
+      return false
+    }
+  },
+
+  /**
    * Create a new channel within a guild and sync its Matrix Room.
    * @param {object} data - Channel data
    * @returns {Promise<object>} Created channel
@@ -232,6 +271,15 @@ export const guildProfileService = {
   async createChannel(data) {
     const { guildId, name, topic, type, category, userId } = data
     const accessToken = data.accessToken
+
+    if (userId) {
+      const canManage = await this.canUserManageChannels(guildId, userId)
+      if (!canManage) {
+        const err = new Error('Você não tem permissão para criar canais nesta guilda')
+        err.statusCode = 403
+        throw err
+      }
+    }
 
     // Create Matrix Room as child of the guild's Space
     const roomId = await spaceSync.createRoom(accessToken, guildId, name, topic, undefined, userId)
@@ -305,6 +353,15 @@ export const guildProfileService = {
 
     const guildId = data.guildId || existing?.guildId || channelId
 
+    if (userId && guildId) {
+      const canManage = await this.canUserManageChannels(guildId, userId)
+      if (!canManage) {
+        const err = new Error('Você não tem permissão para editar canais nesta guilda')
+        err.statusCode = 403
+        throw err
+      }
+    }
+
     if (accessToken) {
       try {
         await spaceSync.updateRoom(accessToken, channelId, name, topic, undefined, userId)
@@ -366,6 +423,15 @@ export const guildProfileService = {
       const err = new Error('Canal não encontrado')
       err.statusCode = 404
       throw err
+    }
+
+    if (userId && channel.guildId) {
+      const canManage = await this.canUserManageChannels(channel.guildId, userId)
+      if (!canManage) {
+        const err = new Error('Você não tem permissão para excluir canais nesta guilda')
+        err.statusCode = 403
+        throw err
+      }
     }
 
     if (accessToken) {
