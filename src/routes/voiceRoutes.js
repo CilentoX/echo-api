@@ -9,6 +9,7 @@ import { authenticate } from '../plugins/auth.js'
 const channelVoiceState = new Map()
 const signalQueues = new Map()
 const channelSseClients = new Map()
+const guildSseClients = new Map()
 
 const HEARTBEAT_TIMEOUT_MS = 10000 // 10s sem heartbeat remove o participante (heartbeat cliente a cada 2s)
 
@@ -63,27 +64,61 @@ function pruneStaleParticipants(channelId) {
   const channel = channelVoiceState.get(normId)
   if (!channel) return
   const now = Date.now()
+  let modified = false
+  let guildId = null
   for (const [userId, participant] of channel.entries()) {
     if (now - participant.lastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
+      if (participant.guildId) guildId = participant.guildId
       channel.delete(userId)
+      modified = true
     }
   }
   if (channel.size === 0) {
     channelVoiceState.delete(normId)
   }
+  if (modified && guildId) {
+    broadcastGuildVoiceState(guildId)
+  }
 }
 
 function pruneAllStaleParticipants() {
   const now = Date.now()
+  const affectedGuilds = new Set()
+  const affectedChannels = new Set()
+
   for (const [channelId, channel] of channelVoiceState.entries()) {
     for (const [userId, participant] of channel.entries()) {
       if (now - participant.lastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
+        if (participant.guildId) affectedGuilds.add(participant.guildId)
+        affectedChannels.add(channelId)
         channel.delete(userId)
+        broadcastChannelEvent(channelId, 'participant_left', { userId, channelId })
       }
     }
     if (channel.size === 0) {
       channelVoiceState.delete(channelId)
     }
+  }
+
+  for (const chId of affectedChannels) {
+    const ch = channelVoiceState.get(chId)
+    const remaining = ch
+      ? Array.from(ch.values()).map((p) => ({
+          userId: p.userId,
+          username: p.username,
+          avatarUrl: p.avatarUrl,
+          isMuted: p.isMuted,
+          isDeafened: p.isDeafened,
+          isSpeaking: p.isSpeaking,
+          isScreenSharing: Boolean(p.isScreenSharing),
+          hasCamera: Boolean(p.hasCamera),
+        }))
+      : []
+    broadcastChannelEvent(chId, 'participants', remaining)
+  }
+
+  for (const gId of affectedGuilds) {
+    broadcastGuildVoiceState(gId)
   }
 }
 
@@ -93,14 +128,85 @@ if (typeof backgroundPruner.unref === 'function') {
   backgroundPruner.unref()
 }
 
+/**
+ * Coleta snapshot de canais com participantes ativos para uma guilda.
+ */
+function getGuildVoiceStateData(guildId) {
+  const normGuildId = guildId ? normalizeChannelId(guildId) : ''
+  const channels = {}
+
+  for (const [chId, channel] of channelVoiceState.entries()) {
+    const participants = []
+    for (const p of channel.values()) {
+      if (!normGuildId || p.guildId === normGuildId || !p.guildId) {
+        participants.push({
+          userId: p.userId,
+          username: p.username,
+          avatarUrl: p.avatarUrl,
+          isMuted: p.isMuted,
+          isDeafened: p.isDeafened,
+          isSpeaking: p.isSpeaking,
+          isScreenSharing: Boolean(p.isScreenSharing),
+          hasCamera: Boolean(p.hasCamera),
+        })
+      }
+    }
+    if (participants.length > 0) {
+      channels[chId] = participants
+    }
+  }
+
+  return { guildId: normGuildId, channels }
+}
+
+/**
+ * Transmite o snapshot atualizado de voz da guilda para todos os ouvintes via SSE.
+ */
+function broadcastGuildVoiceState(guildId) {
+  if (!guildId) return
+  const normGuildId = normalizeChannelId(guildId)
+  const clients = guildSseClients.get(normGuildId)
+  if (!clients || clients.size === 0) return
+
+  const data = getGuildVoiceStateData(normGuildId)
+  const payload = `event: voice_state\ndata: ${JSON.stringify(data)}\n\n`
+
+  for (const [userId, client] of clients.entries()) {
+    try {
+      client.reply.raw.write(payload)
+    } catch {
+      clients.delete(userId)
+    }
+  }
+}
+
 function removeUserFromAllChannels(userId) {
+  const affectedGuilds = new Set()
   for (const [channelId, channel] of channelVoiceState.entries()) {
     if (channel.has(userId)) {
+      const p = channel.get(userId)
+      if (p?.guildId) affectedGuilds.add(p.guildId)
       channel.delete(userId)
       if (channel.size === 0) {
         channelVoiceState.delete(channelId)
+      } else {
+        const remaining = Array.from(channel.values()).map((p) => ({
+          userId: p.userId,
+          username: p.username,
+          avatarUrl: p.avatarUrl,
+          isMuted: p.isMuted,
+          isDeafened: p.isDeafened,
+          isSpeaking: p.isSpeaking,
+          isScreenSharing: Boolean(p.isScreenSharing),
+          hasCamera: Boolean(p.hasCamera),
+        }))
+        broadcastChannelEvent(channelId, 'participants', remaining)
       }
+      broadcastChannelEvent(channelId, 'participant_left', { userId, channelId })
     }
+  }
+  for (const gId of affectedGuilds) {
+    broadcastGuildVoiceState(gId)
   }
 }
 
@@ -158,6 +264,11 @@ export function registerVoiceRoutes(app) {
       // Difunde imediatamente a entrada do participante para todos os peers conectados no canal via SSE
       broadcastChannelEvent(channelId, 'participants', participants, userId)
 
+      // Difunde o novo estado de voz para todos os ouvintes da guilda via SSE
+      if (guildId) {
+        broadcastGuildVoiceState(guildId)
+      }
+
       return reply.code(200).send({ success: true, channelId, myUserId: userId, participants })
     }
   )
@@ -197,6 +308,13 @@ export function registerVoiceRoutes(app) {
       } else {
         const participant = channel.get(userId)
         participant.lastHeartbeat = Date.now()
+        const stateChanged =
+          (typeof isSpeaking === 'boolean' && participant.isSpeaking !== isSpeaking) ||
+          (typeof isMuted === 'boolean' && participant.isMuted !== isMuted) ||
+          (typeof isDeafened === 'boolean' && participant.isDeafened !== isDeafened) ||
+          (typeof isScreenSharing === 'boolean' && participant.isScreenSharing !== isScreenSharing) ||
+          (typeof hasCamera === 'boolean' && participant.hasCamera !== hasCamera)
+
         if (typeof isSpeaking === 'boolean') participant.isSpeaking = isSpeaking
         if (typeof isMuted === 'boolean') participant.isMuted = isMuted
         if (typeof isDeafened === 'boolean') participant.isDeafened = isDeafened
@@ -205,6 +323,10 @@ export function registerVoiceRoutes(app) {
         if (guildId && !participant.guildId) participant.guildId = normalizeChannelId(guildId)
         if (username && participant.username === userId.replace(/^@/, '').split(':')[0]) participant.username = username
         if (avatarUrl && !participant.avatarUrl) participant.avatarUrl = avatarUrl
+
+        if (stateChanged && participant.guildId) {
+          broadcastGuildVoiceState(participant.guildId)
+        }
       }
 
       const participants = Array.from(channel.values()).map((p) => ({
@@ -246,7 +368,10 @@ export function registerVoiceRoutes(app) {
 
       if (channelId && channelId !== 'current') {
         const channel = channelVoiceState.get(channelId)
+        let targetGuildId = null
         if (channel) {
+          const p = channel.get(userId)
+          if (p?.guildId) targetGuildId = p.guildId
           channel.delete(userId)
           if (channel.size === 0) {
             channelVoiceState.delete(channelId)
@@ -265,6 +390,9 @@ export function registerVoiceRoutes(app) {
           }
         }
         broadcastChannelEvent(channelId, 'participant_left', { userId, channelId })
+        if (targetGuildId) {
+          broadcastGuildVoiceState(targetGuildId)
+        }
       } else {
         removeUserFromAllChannels(userId)
       }
@@ -297,32 +425,66 @@ export function registerVoiceRoutes(app) {
     async (request, reply) => {
       const rawGuildId = request.params.guildId
       const guildId = rawGuildId ? normalizeChannelId(rawGuildId) : ''
-      const channels = {}
-
       pruneAllStaleParticipants()
+      const data = getGuildVoiceStateData(guildId)
+      return reply.code(200).send(data)
+    }
+  )
 
-      for (const [chId, channel] of channelVoiceState.entries()) {
-        const participants = []
-        for (const p of channel.values()) {
-          if (!guildId || p.guildId === guildId || !p.guildId) {
-            participants.push({
-              userId: p.userId,
-              username: p.username,
-              avatarUrl: p.avatarUrl,
-              isMuted: p.isMuted,
-              isDeafened: p.isDeafened,
-              isSpeaking: p.isSpeaking,
-              isScreenSharing: Boolean(p.isScreenSharing),
-              hasCamera: Boolean(p.hasCamera),
-            })
-          }
-        }
-        if (participants.length > 0) {
-          channels[chId] = participants
-        }
+  /**
+   * GET /api/guilds/:guildId/voice/events
+   * Stream Server-Sent Events (SSE) do estado de voz de uma guilda em tempo real.
+   * Elimina completamente a necessidade de polling periódico (1.5s).
+   */
+  app.get(
+    '/api/guilds/:guildId/voice/events',
+    { preHandler: authenticate },
+    async (request, reply) => {
+      const guildId = normalizeChannelId(request.params.guildId)
+      const userId = request.user.userId
+
+      reply.raw.setHeader('Content-Type', 'text/event-stream')
+      reply.raw.setHeader('Cache-Control', 'no-cache, no-transform')
+      reply.raw.setHeader('Connection', 'keep-alive')
+      reply.raw.setHeader('X-Accel-Buffering', 'no')
+      reply.raw.flushHeaders()
+
+      // Envia snapshot inicial imediato
+      const initialData = getGuildVoiceStateData(guildId)
+      reply.raw.write(`event: voice_state\ndata: ${JSON.stringify(initialData)}\n\n`)
+
+      if (!guildSseClients.has(guildId)) {
+        guildSseClients.set(guildId, new Map())
+      }
+      const clients = guildSseClients.get(guildId)
+
+      const existing = clients.get(userId)
+      if (existing?.keepaliveInterval) {
+        clearInterval(existing.keepaliveInterval)
       }
 
-      return reply.code(200).send({ guildId, channels })
+      // Ping keepalive a cada 20s
+      const keepaliveInterval = setInterval(() => {
+        try {
+          reply.raw.write(': ping\n\n')
+        } catch {
+          clearInterval(keepaliveInterval)
+          clients.delete(userId)
+        }
+      }, 20000)
+
+      clients.set(userId, { reply, request, keepaliveInterval })
+
+      request.raw.on('close', () => {
+        clearInterval(keepaliveInterval)
+        const currentClients = guildSseClients.get(guildId)
+        if (currentClients) {
+          currentClients.delete(userId)
+          if (currentClients.size === 0) {
+            guildSseClients.delete(guildId)
+          }
+        }
+      })
     }
   )
 
