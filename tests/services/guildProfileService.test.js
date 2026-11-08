@@ -21,6 +21,9 @@ vi.mock('../src/db.js', () => ({
       deleteMany: vi.fn(),
       upsert: vi.fn(),
     },
+    guildMemberRole: {
+      findMany: vi.fn(),
+    },
   },
 }))
 
@@ -154,6 +157,75 @@ describe('GuildProfile and ChannelProfile models', () => {
           channelId: '!inexistente:litteris.online',
         })
       ).rejects.toThrow('Canal não encontrado')
+    })
+  })
+
+  describe('canUserManageChannels (Segurança RBAC P0)', () => {
+    it('retorna true se o usuário for o criador da guilda', async () => {
+      const { prisma } = await import('../../src/db.js')
+      prisma.guildProfile.findUnique.mockResolvedValue({
+        createdBy: '@owner:echo.litteris.online',
+      })
+
+      const allowed = await service.guildProfileService.canUserManageChannels(
+        'guild-1',
+        '@owner:echo.litteris.online'
+      )
+      expect(allowed).toBe(true)
+    })
+
+    it('NUNCA permite acesso se createdBy for nulo sem cargo com permissão MANAGE_CHANNELS', async () => {
+      const { prisma } = await import('../../src/db.js')
+      prisma.guildProfile.findUnique.mockResolvedValue({
+        createdBy: null,
+      })
+      prisma.guildMemberRole.findMany.mockResolvedValue([])
+
+      const allowed = await service.guildProfileService.canUserManageChannels(
+        'guild-1',
+        '@attacker:echo.litteris.online'
+      )
+      expect(allowed).toBe(false)
+    })
+
+    it('permite acesso se o usuário possuir cargo com MANAGE_CHANNELS mesmo sem ser o criador', async () => {
+      const { prisma } = await import('../../src/db.js')
+      prisma.guildProfile.findUnique.mockResolvedValue({
+        createdBy: '@owner:echo.litteris.online',
+      })
+      prisma.guildMemberRole.findMany.mockResolvedValue([
+        {
+          role: {
+            permissions: ['VIEW_CHANNEL', 'MANAGE_CHANNELS'],
+          },
+        },
+      ])
+
+      const allowed = await service.guildProfileService.canUserManageChannels(
+        'guild-1',
+        '@mod:echo.litteris.online'
+      )
+      expect(allowed).toBe(true)
+    })
+
+    it('permite acesso se o usuário possuir cargo com ADMINISTRATOR', async () => {
+      const { prisma } = await import('../../src/db.js')
+      prisma.guildProfile.findUnique.mockResolvedValue({
+        createdBy: null,
+      })
+      prisma.guildMemberRole.findMany.mockResolvedValue([
+        {
+          role: {
+            permissions: ['ADMINISTRATOR'],
+          },
+        },
+      ])
+
+      const allowed = await service.guildProfileService.canUserManageChannels(
+        'guild-1',
+        '@admin:echo.litteris.online'
+      )
+      expect(allowed).toBe(true)
     })
   })
 })

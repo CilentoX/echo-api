@@ -240,8 +240,8 @@ export const guildProfileService = {
       select: { createdBy: true },
     })
     if (!guild) return false
-    // Se a guilda foi criada pelo usuário (ou legada sem createdBy definido)
-    if (!guild.createdBy || guild.createdBy.toLowerCase() === userId.toLowerCase()) {
+    // Se a guilda foi criada pelo usuário autenticado
+    if (guild.createdBy && guild.createdBy.toLowerCase() === userId.toLowerCase()) {
       return true
     }
 

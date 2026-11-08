@@ -132,7 +132,8 @@ export function registerGuildRoutes(app) {
       return reply.code(201).send(channel)
     } catch (err) {
       request.log.error(err)
-      return reply.code(500).send({ error: 'Erro ao criar canal: ' + (err.message || 'desconhecido') })
+      const status = err.statusCode || 500
+      return reply.code(status).send({ error: 'Erro ao criar canal: ' + (err.message || 'desconhecido') })
     }
   }
 
