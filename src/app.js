@@ -40,7 +40,8 @@ await app.register(rateLimit, {
       url.startsWith('/readyz') ||
       url.startsWith('/api/health') ||
       url === '/' ||
-      url.startsWith('/matrix/sync')
+      url.startsWith('/matrix/sync') ||
+      url.includes('/voice/events')
     )
   },
 })

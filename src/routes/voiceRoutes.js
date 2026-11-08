@@ -4,9 +4,11 @@ import { authenticate } from '../plugins/auth.js'
  * Estrutura em memória para estado de salas de voz e sinalização WebRTC.
  * channelVoiceState: Map<channelId, Map<userId, ParticipantData>>
  * signalQueues: Map<targetUserId, Array<{ fromUserId: string, channelId: string, signal: any, timestamp: number }>>
+ * channelSseClients: Map<channelId, Map<userId, { reply, request, keepaliveInterval }>>
  */
 const channelVoiceState = new Map()
 const signalQueues = new Map()
+const channelSseClients = new Map()
 
 const HEARTBEAT_TIMEOUT_MS = 10000 // 10s sem heartbeat remove o participante (heartbeat cliente a cada 2s)
 
@@ -17,6 +19,43 @@ function normalizeChannelId(id) {
   } catch {
     return String(id).trim()
   }
+}
+
+/**
+ * Transmite evento em tempo real via Server-Sent Events (SSE) para todos os clientes do canal.
+ */
+function broadcastChannelEvent(channelId, eventName, data, excludeUserId = null) {
+  const normId = normalizeChannelId(channelId)
+  const clients = channelSseClients.get(normId)
+  if (!clients) return
+  const payload = `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`
+  for (const [userId, client] of clients.entries()) {
+    if (excludeUserId && userId === excludeUserId) continue
+    try {
+      client.reply.raw.write(payload)
+    } catch {
+      clients.delete(userId)
+    }
+  }
+}
+
+/**
+ * Envia evento instantâneo via SSE diretamente ao usuário de destino (<20ms).
+ */
+function sendUserEvent(targetUserId, eventName, data) {
+  let delivered = false
+  for (const clients of channelSseClients.values()) {
+    const client = clients.get(targetUserId)
+    if (client) {
+      try {
+        client.reply.raw.write(`event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`)
+        delivered = true
+      } catch {
+        clients.delete(targetUserId)
+      }
+    }
+  }
+  return delivered
 }
 
 function pruneStaleParticipants(channelId) {
@@ -116,6 +155,9 @@ export function registerVoiceRoutes(app) {
         hasCamera: Boolean(p.hasCamera),
       }))
 
+      // Difunde imediatamente a entrada do participante para todos os peers conectados no canal via SSE
+      broadcastChannelEvent(channelId, 'participants', participants, userId)
+
       return reply.code(200).send({ success: true, channelId, myUserId: userId, participants })
     }
   )
@@ -176,6 +218,16 @@ export function registerVoiceRoutes(app) {
         hasCamera: Boolean(p.hasCamera),
       }))
 
+      // Difunde atualizações de estado (mudo, fala, tela, câmera) em tempo real via SSE
+      broadcastChannelEvent(channelId, 'participant_updated', {
+        userId,
+        isSpeaking: typeof isSpeaking === 'boolean' ? isSpeaking : undefined,
+        isMuted: typeof isMuted === 'boolean' ? isMuted : undefined,
+        isDeafened: typeof isDeafened === 'boolean' ? isDeafened : undefined,
+        isScreenSharing: typeof isScreenSharing === 'boolean' ? isScreenSharing : undefined,
+        hasCamera: typeof hasCamera === 'boolean' ? hasCamera : undefined,
+      }, userId)
+
       return reply.code(200).send({ channelId, myUserId: userId, participants })
     }
   )
@@ -196,8 +248,23 @@ export function registerVoiceRoutes(app) {
         const channel = channelVoiceState.get(channelId)
         if (channel) {
           channel.delete(userId)
-          if (channel.size === 0) channelVoiceState.delete(channelId)
+          if (channel.size === 0) {
+            channelVoiceState.delete(channelId)
+          } else {
+            const remaining = Array.from(channel.values()).map((p) => ({
+              userId: p.userId,
+              username: p.username,
+              avatarUrl: p.avatarUrl,
+              isMuted: p.isMuted,
+              isDeafened: p.isDeafened,
+              isSpeaking: p.isSpeaking,
+              isScreenSharing: Boolean(p.isScreenSharing),
+              hasCamera: Boolean(p.hasCamera),
+            }))
+            broadcastChannelEvent(channelId, 'participants', remaining)
+          }
         }
+        broadcastChannelEvent(channelId, 'participant_left', { userId, channelId })
       } else {
         removeUserFromAllChannels(userId)
       }
@@ -262,6 +329,7 @@ export function registerVoiceRoutes(app) {
   /**
    * POST /api/channels/:channelId/voice/signal
    * Envia uma mensagem de sinalização WebRTC (offer, answer, ICE candidate).
+   * Despacha instantaneamente via SSE (<20ms) e armazena em fila como fallback.
    */
   app.post(
     '/api/channels/:channelId/voice/signal',
@@ -275,30 +343,36 @@ export function registerVoiceRoutes(app) {
         return reply.code(400).send({ error: 'targetUserId e signal são obrigatórios' })
       }
 
+      const signalPayload = {
+        fromUserId,
+        channelId,
+        signal,
+        timestamp: Date.now(),
+      }
+
+      // 1. Tenta envio instantâneo direto pelo stream push SSE (<20ms)
+      const deliveredRealtime = sendUserEvent(targetUserId, 'signal', signalPayload)
+
+      // 2. Mantém na fila com limite defensivo como garantia/fallback
       if (!signalQueues.has(targetUserId)) {
         signalQueues.set(targetUserId, [])
       }
 
       const queue = signalQueues.get(targetUserId)
-      queue.push({
-        fromUserId,
-        channelId,
-        signal,
-        timestamp: Date.now(),
-      })
+      queue.push(signalPayload)
 
       // Limita fila a 50 sinais para evitar vazamento
       if (queue.length > 50) {
         queue.splice(0, queue.length - 50)
       }
 
-      return reply.code(200).send({ success: true })
+      return reply.code(200).send({ success: true, delivered: deliveredRealtime ? 'realtime' : 'queued' })
     }
   )
 
   /**
    * GET /api/channels/:channelId/voice/signals
-   * Recupera e consome os sinais WebRTC destinados ao usuário atual.
+   * Recupera e consome os sinais WebRTC destinados ao usuário atual (fallback HTTP polling).
    */
   app.get(
     '/api/channels/:channelId/voice/signals',
@@ -321,6 +395,75 @@ export function registerVoiceRoutes(app) {
       }
 
       return reply.code(200).send({ signals: relevant })
+    }
+  )
+
+  /**
+   * GET /api/channels/:channelId/voice/events
+   * Stream de eventos Server-Sent Events (SSE) para sinalização e presença instantâneas (<20ms).
+   */
+  app.get(
+    '/api/channels/:channelId/voice/events',
+    { preHandler: authenticate },
+    async (request, reply) => {
+      const channelId = normalizeChannelId(request.params.channelId)
+      const userId = request.user.userId
+
+      reply.raw.setHeader('Content-Type', 'text/event-stream')
+      reply.raw.setHeader('Cache-Control', 'no-cache, no-transform')
+      reply.raw.setHeader('Connection', 'keep-alive')
+      reply.raw.setHeader('X-Accel-Buffering', 'no')
+      reply.raw.flushHeaders()
+
+      // Notifica cliente de conexão SSE pronta
+      reply.raw.write(`event: connected\ndata: ${JSON.stringify({ userId, channelId, timestamp: Date.now() })}\n\n`)
+
+      if (!channelSseClients.has(channelId)) {
+        channelSseClients.set(channelId, new Map())
+      }
+      const clients = channelSseClients.get(channelId)
+
+      // Se já existia conexão anterior para este mesmo usuário, limpa o keepalive anterior
+      const existing = clients.get(userId)
+      if (existing?.keepaliveInterval) {
+        clearInterval(existing.keepaliveInterval)
+      }
+
+      // Keepalive a cada 15 segundos para manter viva a conexão através de proxies/Cloudflare
+      const keepaliveInterval = setInterval(() => {
+        try {
+          reply.raw.write(': ping\n\n')
+        } catch {
+          clearInterval(keepaliveInterval)
+          clients.delete(userId)
+        }
+      }, 15000)
+
+      clients.set(userId, { reply, request, keepaliveInterval })
+
+      // Se houver sinais pendentes na fila, despacha imediatamente
+      if (signalQueues.has(userId)) {
+        const queued = signalQueues.get(userId) || []
+        const relevant = queued.filter((s) => !channelId || s.channelId === channelId)
+        for (const item of relevant) {
+          try {
+            reply.raw.write(`event: signal\ndata: ${JSON.stringify(item)}\n\n`)
+          } catch {}
+        }
+        signalQueues.delete(userId)
+      }
+
+      // Cleanup ao fechar o socket
+      request.raw.on('close', () => {
+        clearInterval(keepaliveInterval)
+        const currentClients = channelSseClients.get(channelId)
+        if (currentClients) {
+          currentClients.delete(userId)
+          if (currentClients.size === 0) {
+            channelSseClients.delete(channelId)
+          }
+        }
+      })
     }
   )
 }
