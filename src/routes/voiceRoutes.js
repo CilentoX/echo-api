@@ -45,8 +45,17 @@ function broadcastChannelEvent(channelId, eventName, data, excludeUserId = null)
  */
 function sendUserEvent(targetUserId, eventName, data) {
   let delivered = false
+  const targetNorm = targetUserId ? String(targetUserId).toLowerCase() : ''
   for (const clients of channelSseClients.values()) {
-    const client = clients.get(targetUserId)
+    let client = clients.get(targetUserId)
+    if (!client && targetNorm) {
+      for (const [uid, c] of clients.entries()) {
+        if (String(uid).toLowerCase() === targetNorm) {
+          client = c
+          break
+        }
+      }
+    }
     if (client) {
       try {
         client.reply.raw.write(`event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`)
@@ -139,13 +148,14 @@ function getGuildVoiceStateData(guildId) {
     const participants = []
     for (const p of channel.values()) {
       if (!normGuildId || p.guildId === normGuildId || !p.guildId) {
+        const isUserMuted = Boolean(p.isMuted || p.isDeafened)
         participants.push({
           userId: p.userId,
           username: p.username,
           avatarUrl: p.avatarUrl,
-          isMuted: p.isMuted,
-          isDeafened: p.isDeafened,
-          isSpeaking: p.isSpeaking,
+          isMuted: Boolean(p.isMuted),
+          isDeafened: Boolean(p.isDeafened),
+          isSpeaking: isUserMuted ? false : Boolean(p.isSpeaking),
           isScreenSharing: Boolean(p.isScreenSharing),
           hasCamera: Boolean(p.hasCamera),
         })
@@ -308,16 +318,21 @@ export function registerVoiceRoutes(app) {
       } else {
         const participant = channel.get(userId)
         participant.lastHeartbeat = Date.now()
+        const effectiveMuted = typeof isMuted === 'boolean' ? isMuted : participant.isMuted
+        const effectiveDeafened = typeof isDeafened === 'boolean' ? isDeafened : participant.isDeafened
+        const rawSpeaking = typeof isSpeaking === 'boolean' ? isSpeaking : participant.isSpeaking
+        const effectiveSpeaking = (effectiveMuted || effectiveDeafened) ? false : rawSpeaking
+
         const stateChanged =
-          (typeof isSpeaking === 'boolean' && participant.isSpeaking !== isSpeaking) ||
-          (typeof isMuted === 'boolean' && participant.isMuted !== isMuted) ||
-          (typeof isDeafened === 'boolean' && participant.isDeafened !== isDeafened) ||
+          participant.isSpeaking !== effectiveSpeaking ||
+          participant.isMuted !== effectiveMuted ||
+          participant.isDeafened !== effectiveDeafened ||
           (typeof isScreenSharing === 'boolean' && participant.isScreenSharing !== isScreenSharing) ||
           (typeof hasCamera === 'boolean' && participant.hasCamera !== hasCamera)
 
-        if (typeof isSpeaking === 'boolean') participant.isSpeaking = isSpeaking
-        if (typeof isMuted === 'boolean') participant.isMuted = isMuted
-        if (typeof isDeafened === 'boolean') participant.isDeafened = isDeafened
+        participant.isSpeaking = effectiveSpeaking
+        participant.isMuted = effectiveMuted
+        participant.isDeafened = effectiveDeafened
         if (typeof isScreenSharing === 'boolean') participant.isScreenSharing = isScreenSharing
         if (typeof hasCamera === 'boolean') participant.hasCamera = hasCamera
         if (guildId && !participant.guildId) participant.guildId = normalizeChannelId(guildId)
@@ -333,21 +348,22 @@ export function registerVoiceRoutes(app) {
         userId: p.userId,
         username: p.username,
         avatarUrl: p.avatarUrl,
-        isMuted: p.isMuted,
-        isDeafened: p.isDeafened,
-        isSpeaking: p.isSpeaking,
+        isMuted: Boolean(p.isMuted),
+        isDeafened: Boolean(p.isDeafened),
+        isSpeaking: (p.isMuted || p.isDeafened) ? false : Boolean(p.isSpeaking),
         isScreenSharing: Boolean(p.isScreenSharing),
         hasCamera: Boolean(p.hasCamera),
       }))
 
+      const curP = channel.get(userId)
       // Difunde atualizações de estado (mudo, fala, tela, câmera) em tempo real via SSE
       broadcastChannelEvent(channelId, 'participant_updated', {
         userId,
-        isSpeaking: typeof isSpeaking === 'boolean' ? isSpeaking : undefined,
-        isMuted: typeof isMuted === 'boolean' ? isMuted : undefined,
-        isDeafened: typeof isDeafened === 'boolean' ? isDeafened : undefined,
-        isScreenSharing: typeof isScreenSharing === 'boolean' ? isScreenSharing : undefined,
-        hasCamera: typeof hasCamera === 'boolean' ? hasCamera : undefined,
+        isSpeaking: (curP?.isMuted || curP?.isDeafened) ? false : (typeof isSpeaking === 'boolean' ? isSpeaking : curP?.isSpeaking),
+        isMuted: curP ? curP.isMuted : (typeof isMuted === 'boolean' ? isMuted : undefined),
+        isDeafened: curP ? curP.isDeafened : (typeof isDeafened === 'boolean' ? isDeafened : undefined),
+        isScreenSharing: curP ? curP.isScreenSharing : (typeof isScreenSharing === 'boolean' ? isScreenSharing : undefined),
+        hasCamera: curP ? curP.hasCamera : (typeof hasCamera === 'boolean' ? hasCamera : undefined),
       }, userId)
 
       return reply.code(200).send({ channelId, myUserId: userId, participants })
