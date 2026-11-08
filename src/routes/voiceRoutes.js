@@ -76,7 +76,7 @@ export function registerVoiceRoutes(app) {
     async (request, reply) => {
       const channelId = normalizeChannelId(request.params.channelId)
       const userId = request.user.userId
-      const { guildId, username, avatarUrl, isMuted, isDeafened } = request.body || {}
+      const { guildId, username, avatarUrl, isMuted, isDeafened, isScreenSharing, hasCamera } = request.body || {}
 
       if (!channelId) {
         return reply.code(400).send({ error: 'channelId é obrigatório' })
@@ -98,6 +98,8 @@ export function registerVoiceRoutes(app) {
         isMuted: Boolean(isMuted),
         isDeafened: Boolean(isDeafened),
         isSpeaking: false,
+        isScreenSharing: Boolean(isScreenSharing),
+        hasCamera: Boolean(hasCamera),
         lastHeartbeat: Date.now(),
       })
 
@@ -110,6 +112,8 @@ export function registerVoiceRoutes(app) {
         isMuted: p.isMuted,
         isDeafened: p.isDeafened,
         isSpeaking: p.isSpeaking,
+        isScreenSharing: Boolean(p.isScreenSharing),
+        hasCamera: Boolean(p.hasCamera),
       }))
 
       return reply.code(200).send({ success: true, channelId, myUserId: userId, participants })
@@ -126,7 +130,7 @@ export function registerVoiceRoutes(app) {
     async (request, reply) => {
       const channelId = normalizeChannelId(request.params.channelId)
       const userId = request.user.userId
-      const { isSpeaking, isMuted, isDeafened, guildId, username, avatarUrl } = request.body || {}
+      const { isSpeaking, isMuted, isDeafened, isScreenSharing, hasCamera, guildId, username, avatarUrl } = request.body || {}
 
       pruneStaleParticipants(channelId)
 
@@ -144,6 +148,8 @@ export function registerVoiceRoutes(app) {
           isMuted: Boolean(isMuted),
           isDeafened: Boolean(isDeafened),
           isSpeaking: Boolean(isSpeaking),
+          isScreenSharing: Boolean(isScreenSharing),
+          hasCamera: Boolean(hasCamera),
           lastHeartbeat: Date.now(),
         })
       } else {
@@ -152,6 +158,8 @@ export function registerVoiceRoutes(app) {
         if (typeof isSpeaking === 'boolean') participant.isSpeaking = isSpeaking
         if (typeof isMuted === 'boolean') participant.isMuted = isMuted
         if (typeof isDeafened === 'boolean') participant.isDeafened = isDeafened
+        if (typeof isScreenSharing === 'boolean') participant.isScreenSharing = isScreenSharing
+        if (typeof hasCamera === 'boolean') participant.hasCamera = hasCamera
         if (guildId && !participant.guildId) participant.guildId = normalizeChannelId(guildId)
         if (username && participant.username === userId.replace(/^@/, '').split(':')[0]) participant.username = username
         if (avatarUrl && !participant.avatarUrl) participant.avatarUrl = avatarUrl
@@ -164,6 +172,8 @@ export function registerVoiceRoutes(app) {
         isMuted: p.isMuted,
         isDeafened: p.isDeafened,
         isSpeaking: p.isSpeaking,
+        isScreenSharing: Boolean(p.isScreenSharing),
+        hasCamera: Boolean(p.hasCamera),
       }))
 
       return reply.code(200).send({ channelId, myUserId: userId, participants })
@@ -235,6 +245,8 @@ export function registerVoiceRoutes(app) {
               isMuted: p.isMuted,
               isDeafened: p.isDeafened,
               isSpeaking: p.isSpeaking,
+              isScreenSharing: Boolean(p.isScreenSharing),
+              hasCamera: Boolean(p.hasCamera),
             })
           }
         }
