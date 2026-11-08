@@ -197,6 +197,20 @@ export function registerVoiceRoutes(app) {
   )
 
   /**
+   * POST /api/voice/leave
+   * Sai de todas as salas de voz (logout, boot/inicialização ou cleanup).
+   */
+  app.post(
+    '/api/voice/leave',
+    { preHandler: authenticate },
+    async (request, reply) => {
+      const userId = request.user.userId
+      removeUserFromAllChannels(userId)
+      return reply.code(200).send({ success: true })
+    }
+  )
+
+  /**
    * GET /api/guilds/:guildId/voice/state
    * Retorna os participantes ativos de voz para todos os canais de uma guilda.
    */

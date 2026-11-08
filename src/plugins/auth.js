@@ -206,15 +206,17 @@ export async function authenticate(request, reply) {
     return
   }
 
-  // 2. Try Authorization: Bearer <token>
+  // 2. Try Authorization: Bearer <token>, query ?token=, or body.token (e.g. navigator.sendBeacon)
+  let token = null
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7).trim()
+    token = authHeader.substring(7).trim()
+  } else if (request.query && typeof request.query.token === 'string') {
+    token = request.query.token.trim()
+  } else if (request.body && typeof request.body.token === 'string') {
+    token = request.body.token.trim()
+  }
 
-    if (!token) {
-      reply.code(401).send({ error: 'Unauthorized: empty bearer token' })
-      return
-    }
-
+  if (token) {
     // A) Synapse Matrix access token (starts with syt_ or syt-)
     if (token.startsWith('syt_') || token.startsWith('syt-')) {
       const user = await validateSynapseToken(token)
