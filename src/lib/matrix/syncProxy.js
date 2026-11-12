@@ -7,10 +7,26 @@
  *
  * Synapse does NOT support WebSocket on /sync — only HTTP long-polling.
  *
+ * IMPORTANT: This function must NOT be async. @fastify/websocket v11 treats
+ * async handlers as regular HTTP route handlers and will attempt to send an
+ * HTTP response on the upgraded socket, immediately closing the connection.
+ * We use a synchronous wrapper that kicks off the async work via .catch().
+ *
  * @param {import('ws').WebSocket} socket - The client WebSocket connection
  * @param {object} request - Fastify request object
  */
-export async function handleSyncProxy(socket, request) {
+export function handleSyncProxy(socket, request) {
+  // Fire-and-forget the async work; do NOT return a promise to Fastify
+  runSyncLoop(socket, request).catch((err) => {
+    console.error('[syncProxy] Unhandled error in sync loop:', err)
+  })
+}
+
+/**
+ * Internal async implementation of the sync loop.
+ * Separated from the exported handler to keep the export synchronous.
+ */
+async function runSyncLoop(socket, request) {
   const accessToken = request.query?.access_token
   if (!accessToken) {
     socket.close(4001, 'Unauthorized: no access token')
