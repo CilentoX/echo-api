@@ -177,6 +177,13 @@ app.route({
 })
 
 /**
+ * WebSocket proxy for Matrix /sync
+ * MUST be registered BEFORE the /matrix/* wildcard route so Fastify
+ * matches this exact path first instead of falling through to the wildcard.
+ */
+app.get('/matrix/sync', { websocket: true }, handleSyncProxy)
+
+/**
  * Matrix proxy route - forwards all /matrix/* requests to Synapse
  *
  * This route requires authentication - the request must have `request.user.accessToken`
@@ -198,11 +205,6 @@ app.route({
     await proxyToMatrix(request, reply, matrixPath)
   },
 })
-
-/**
- * WebSocket proxy for Matrix /sync
- */
-app.get('/matrix/sync', { websocket: true }, handleSyncProxy)
 
 /**
  * Google SSO authentication routes
