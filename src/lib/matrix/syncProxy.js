@@ -7,29 +7,34 @@ const DEFAULT_TIMEOUT = 30000
  * Handles the /matrix/sync WebSocket proxy.
  * Streams Synapse /sync to the connected client with bidirectional piping.
  *
- * @param {object} connection - @fastify/websocket connection object (connection.socket is the WebSocket)
+ * @fastify/websocket v11 passes (socket, request) directly to the handler,
+ * where socket is the ws WebSocket instance.
+ *
+ * @param {import('ws').WebSocket} socket - The client WebSocket connection
  * @param {object} request - Fastify request object
- * @returns {void}
  */
-export async function handleSyncProxy(connection, request) {
+export async function handleSyncProxy(socket, request) {
   // WebSocket in browsers/Tauri cannot set custom headers, so accept token via query param.
   const accessToken = request.query?.access_token
   if (!accessToken) {
-    connection.socket.close(4001, 'Unauthorized: no access token')
+    socket.close(4001, 'Unauthorized: no access token')
     return
   }
 
   const since = request.query.since || ''
   const baseUrl = process.env.SYNAPSE_URL || 'http://localhost:8008'
-  const synapseWsUrl = `${baseUrl}${SYNAPSE_SYNC_PATH}?access_token=${accessToken}&timeout=30000&since=${encodeURIComponent(since)}`
+  const synapseWsUrl = `${baseUrl.replace(/\/$/, '')}${SYNAPSE_SYNC_PATH}?access_token=${encodeURIComponent(accessToken)}&timeout=30000&since=${encodeURIComponent(since)}`
 
-  const clientWs = connection.socket
   let synapseWs = null
   let reconnectAttempts = 0
   const maxReconnectAttempts = 5
+  let closed = false
 
-  // Create Synapse WebSocket connection
+  console.log('[syncProxy] Client WebSocket connected, connecting to Synapse...')
+
   function connectSynapse() {
+    if (closed) return
+
     synapseWs = new WebSocket(synapseWsUrl)
 
     synapseWs.on('open', () => {
@@ -38,14 +43,14 @@ export async function handleSyncProxy(connection, request) {
     })
 
     synapseWs.on('message', (data) => {
-      if (clientWs.readyState === clientWs.OPEN) {
-        clientWs.send(data)
+      if (socket.readyState === socket.OPEN) {
+        socket.send(data)
       }
     })
 
     synapseWs.on('close', () => {
-      console.log('[syncProxy] Synapse /sync WebSocket closed, attempting reconnect...')
-      attemptReconnect()
+      console.log('[syncProxy] Synapse /sync WebSocket closed')
+      if (!closed) attemptReconnect()
     })
 
     synapseWs.on('error', (err) => {
@@ -53,55 +58,42 @@ export async function handleSyncProxy(connection, request) {
     })
   }
 
-  // Attempt to reconnect Synapse with updated since token
   function attemptReconnect() {
+    if (closed) return
     reconnectAttempts++
 
     if (reconnectAttempts >= maxReconnectAttempts) {
-      console.error('[syncProxy] Max reconnect attempts reached')
-      if (clientWs.readyState === clientWs.OPEN) {
-        clientWs.close()
+      console.error('[syncProxy] Max reconnect attempts reached, closing client socket')
+      if (socket.readyState === socket.OPEN) {
+        socket.close()
       }
       return
     }
 
+    console.log(`[syncProxy] Reconnect attempt ${reconnectAttempts}/${maxReconnectAttempts}...`)
     setTimeout(connectSynapse, 1000 * Math.min(reconnectAttempts, 3))
   }
 
   // Client -> Synapse piping
-  clientWs.on('message', (data) => {
+  socket.on('message', (data) => {
     if (synapseWs && synapseWs.readyState === synapseWs.OPEN) {
       synapseWs.send(data)
     }
   })
 
   // Handle client disconnect
-  clientWs.on('close', () => {
+  socket.on('close', () => {
     console.log('[syncProxy] Client WebSocket closed')
+    closed = true
     if (synapseWs) {
       synapseWs.close()
     }
   })
 
   // Handle client error
-  clientWs.on('error', (err) => {
+  socket.on('error', (err) => {
     console.error('[syncProxy] Client WebSocket error:', err.message)
-  })
-
-  // Set a timeout for the overall sync operation
-  const timeoutId = setTimeout(() => {
-    console.log('[syncProxy] Sync proxy timeout reached')
-    if (clientWs.readyState === clientWs.OPEN) {
-      clientWs.close()
-    }
-    if (synapseWs) {
-      synapseWs.close()
-    }
-  }, DEFAULT_TIMEOUT)
-
-  // Clean up timeout on close
-  clientWs.on('close', () => {
-    clearTimeout(timeoutId)
+    closed = true
   })
 
   // Initiate the Synapse WebSocket connection
