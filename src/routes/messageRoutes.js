@@ -67,7 +67,7 @@ export function registerMessageRoutes(app) {
    */
   const handleSendMessage = async (request, reply) => {
     const { roomId } = request.params
-    const { body, msgtype, mediaId } = request.body || {}
+    const { body, msgtype, mediaId, replyToEventId } = request.body || {}
     const userId = request.user?.userId
     const accessToken = request.user?.accessToken
 
@@ -86,6 +86,7 @@ export function registerMessageRoutes(app) {
         body,
         msgtype,
         mediaId,
+        replyToEventId,
         accessToken,
         userId,
       })

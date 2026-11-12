@@ -16,7 +16,7 @@ import { saveChatMedia } from './chatMediaService.js'
  * @returns {Promise<Object>} { eventId, timestamp }
  * @throws {Error} If the message send fails or media resolution fails
  */
-export async function sendMessage(roomId, { body, msgtype, mediaId, accessToken, userId }) {
+export async function sendMessage(roomId, { body, msgtype, mediaId, replyToEventId, accessToken, userId }) {
   const baseUrl = process.env.SYNAPSE_URL || 'https://echo.litteris.online'
   const client = getMatrixClient(userId, accessToken, baseUrl)
 
@@ -62,6 +62,15 @@ export async function sendMessage(roomId, { body, msgtype, mediaId, accessToken,
       // Default to text
       content = { body, msgtype: 'm.text' }
       break
+  }
+
+  // Add reply relation (m.relates_to with m.in_reply_to) when replying to another message
+  if (replyToEventId) {
+    content['m.relates_to'] = {
+      'm.in_reply_to': {
+        event_id: replyToEventId,
+      },
+    }
   }
 
   // Send the message via Matrix
