@@ -12,7 +12,9 @@ const DEFAULT_TIMEOUT = 30000
  * @returns {void}
  */
 export async function handleSyncProxy(request, reply) {
-  const accessToken = request.user?.accessToken
+  // WebSocket in browsers/Tauri cannot set custom headers, so accept token via query param.
+  // Fall back to request.user.accessToken when the authenticate preHandler has already run.
+  const accessToken = request.query?.access_token || request.user?.accessToken
   if (!accessToken) {
     reply.code(401).send({ error: 'Unauthorized: no access token' })
     return
