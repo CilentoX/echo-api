@@ -1,101 +1,92 @@
-import { WebSocket } from 'ws'
-
-const SYNAPSE_SYNC_PATH = '/_matrix/client/sync'
-const DEFAULT_TIMEOUT = 30000
-
 /**
  * Handles the /matrix/sync WebSocket proxy.
- * Streams Synapse /sync to the connected client with bidirectional piping.
  *
- * @fastify/websocket v11 passes (socket, request) directly to the handler,
- * where socket is the ws WebSocket instance.
+ * The client (desktop app) connects via WebSocket. This handler polls
+ * Synapse's HTTP /_matrix/client/v3/sync endpoint in a loop and streams
+ * each JSON response to the client over the WebSocket.
+ *
+ * Synapse does NOT support WebSocket on /sync — only HTTP long-polling.
  *
  * @param {import('ws').WebSocket} socket - The client WebSocket connection
  * @param {object} request - Fastify request object
  */
 export async function handleSyncProxy(socket, request) {
-  // WebSocket in browsers/Tauri cannot set custom headers, so accept token via query param.
   const accessToken = request.query?.access_token
   if (!accessToken) {
     socket.close(4001, 'Unauthorized: no access token')
     return
   }
 
-  const since = request.query.since || ''
-  const baseUrl = process.env.SYNAPSE_URL || 'http://localhost:8008'
-  const synapseWsUrl = `${baseUrl.replace(/\/$/, '')}${SYNAPSE_SYNC_PATH}?access_token=${encodeURIComponent(accessToken)}&timeout=30000&since=${encodeURIComponent(since)}`
-
-  let synapseWs = null
-  let reconnectAttempts = 0
-  const maxReconnectAttempts = 5
+  let since = request.query.since || ''
+  const timeout = parseInt(request.query.timeout, 10) || 30000
+  const baseUrl = (process.env.SYNAPSE_URL || 'http://localhost:8008').replace(/\/$/, '')
   let closed = false
 
-  console.log('[syncProxy] Client WebSocket connected, connecting to Synapse...')
+  console.log('[syncProxy] Client WebSocket connected, starting HTTP sync loop')
 
-  function connectSynapse() {
-    if (closed) return
-
-    synapseWs = new WebSocket(synapseWsUrl)
-
-    synapseWs.on('open', () => {
-      reconnectAttempts = 0
-      console.log('[syncProxy] Synapse /sync WebSocket connected')
-    })
-
-    synapseWs.on('message', (data) => {
-      if (socket.readyState === socket.OPEN) {
-        socket.send(data)
-      }
-    })
-
-    synapseWs.on('close', () => {
-      console.log('[syncProxy] Synapse /sync WebSocket closed')
-      if (!closed) attemptReconnect()
-    })
-
-    synapseWs.on('error', (err) => {
-      console.error('[syncProxy] Synapse /sync WebSocket error:', err.message)
-    })
-  }
-
-  function attemptReconnect() {
-    if (closed) return
-    reconnectAttempts++
-
-    if (reconnectAttempts >= maxReconnectAttempts) {
-      console.error('[syncProxy] Max reconnect attempts reached, closing client socket')
-      if (socket.readyState === socket.OPEN) {
-        socket.close()
-      }
-      return
-    }
-
-    console.log(`[syncProxy] Reconnect attempt ${reconnectAttempts}/${maxReconnectAttempts}...`)
-    setTimeout(connectSynapse, 1000 * Math.min(reconnectAttempts, 3))
-  }
-
-  // Client -> Synapse piping
-  socket.on('message', (data) => {
-    if (synapseWs && synapseWs.readyState === synapseWs.OPEN) {
-      synapseWs.send(data)
-    }
-  })
-
-  // Handle client disconnect
+  // Clean up on client disconnect
   socket.on('close', () => {
     console.log('[syncProxy] Client WebSocket closed')
     closed = true
-    if (synapseWs) {
-      synapseWs.close()
-    }
   })
 
-  // Handle client error
   socket.on('error', (err) => {
     console.error('[syncProxy] Client WebSocket error:', err.message)
     closed = true
   })
 
-  // Initiate the Synapse WebSocket connection
-  connectSynapse()
+  // Long-poll loop: fetch from Synapse, forward to client, repeat
+  while (!closed && socket.readyState === socket.OPEN) {
+    try {
+      const params = new URLSearchParams({
+        access_token: accessToken,
+        timeout: String(timeout),
+      })
+      if (since) {
+        params.set('since', since)
+      }
+
+      const url = `${baseUrl}/_matrix/client/v3/sync?${params.toString()}`
+      const controller = new AbortController()
+      const fetchTimeout = setTimeout(() => controller.abort(), timeout + 10000)
+
+      const response = await fetch(url, { signal: controller.signal })
+      clearTimeout(fetchTimeout)
+
+      if (!response.ok) {
+        console.error(`[syncProxy] Synapse sync returned ${response.status}: ${response.statusText}`)
+        // On auth failure, close the client socket
+        if (response.status === 401) {
+          socket.close(4001, 'Synapse authentication failed')
+          break
+        }
+        // Wait before retrying on other errors
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+        continue
+      }
+
+      const data = await response.json()
+
+      // Update since token for next poll
+      if (data.next_batch) {
+        since = data.next_batch
+      }
+
+      // Forward the sync response to the client
+      if (socket.readyState === socket.OPEN) {
+        socket.send(JSON.stringify(data))
+      }
+    } catch (err) {
+      if (closed) break
+      if (err.name === 'AbortError') {
+        console.log('[syncProxy] Sync fetch timed out, retrying...')
+        continue
+      }
+      console.error('[syncProxy] Sync fetch error:', err.message)
+      // Wait before retrying
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+    }
+  }
+
+  console.log('[syncProxy] Sync loop ended')
 }
