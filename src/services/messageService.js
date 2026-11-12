@@ -234,6 +234,14 @@ export async function getOlderMessages(roomId, { limit = 20, from, accessToken, 
   const data = await res.json()
   const chunk = Array.isArray(data?.chunk) ? data.chunk : []
 
+  // Build a lookup map of events in this chunk to resolve replyTo sender/body
+  const eventMap = new Map()
+  for (const ev of chunk) {
+    if (ev && ev.event_id) {
+      eventMap.set(ev.event_id, ev)
+    }
+  }
+
   return chunk
     .filter((ev) => ev && ev.type === 'm.room.message' && ev.content)
     .map((ev) => {
@@ -241,13 +249,25 @@ export async function getOlderMessages(roomId, { limit = 20, from, accessToken, 
       const replyEventId = relatesTo?.['m.in_reply_to']?.event_id
       const newContent = ev.content?.['m.new_content']
 
+      // Resolve replyTo sender and body from the same chunk when available
+      let replyToData = null
+      if (replyEventId) {
+        const repliedEv = eventMap.get(replyEventId)
+        const repliedBody = repliedEv?.content?.['m.new_content']?.body || repliedEv?.content?.body || ''
+        replyToData = {
+          eventId: replyEventId,
+          sender: repliedEv?.sender || '',
+          body: repliedBody,
+        }
+      }
+
       return {
         eventId: ev.event_id,
         roomId: ev.room_id || roomId,
         sender: ev.sender,
         body: newContent?.body || ev.content?.body || '',
         originServerTs: ev.origin_server_ts || Date.now(),
-        ...(replyEventId ? { replyTo: { eventId: replyEventId, sender: '', body: '' } } : {}),
+        ...(replyToData ? { replyTo: replyToData } : {}),
         ...(ev.unsigned?.redacted_because ? { redacted: true } : {}),
         senderAvatarUrl: null,
       }
