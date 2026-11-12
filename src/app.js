@@ -1,5 +1,6 @@
 import './polyfill.js'
 import Fastify from 'fastify'
+import websocket from '@fastify/websocket'
 import multipart from '@fastify/multipart'
 import rateLimit from '@fastify/rate-limit'
 import { PrismaClient } from '@prisma/client'
@@ -46,6 +47,9 @@ await app.register(rateLimit, {
     )
   },
 })
+
+// WebSocket support for /matrix/sync proxy
+await app.register(websocket)
 
 // Registrar Prisma client decorator para uso no middleware authenticate
 const prisma = new PrismaClient()
