@@ -234,85 +234,88 @@ export async function getOlderMessages(roomId, { limit = 20, from, accessToken, 
   const data = await res.json()
   const chunk = Array.isArray(data?.chunk) ? data.chunk : []
 
-  // Synapse's /messages endpoint strips m.relates_to from event content during serialization.
-  // The /relations/{parentEventId} endpoint queries the event_relations table directly and
-  // returns child events (replies) with full content. Use this to build a reverse mapping:
-  // for each event in the chunk, find what it replies to by checking which parent's
-  // /relations response includes it.
-  //
-  // Strategy: For each message event, call /relations/{eventId} to get its replies.
-  // Build a map: replyEventId -> { parentEventId, parentSender, parentBody }
-  // Then enrich each event with replyTo data from this map.
-
-  const msgEvents = chunk.filter((ev) => ev?.type === 'm.room.message' && ev?.event_id)
-
-  // Fetch relations for all message events in parallel (batch of /relations calls)
-  const replyMap = new Map() // replyEventId -> { parentEventId, parentSender, parentBody }
-
-  await Promise.all(
-    msgEvents.map(async (parentEv) => {
-      const parentId = parentEv.event_id
-      const relationsUrl = `${baseUrl}/_matrix/client/v1/rooms/${encodedRoomId}/relations/${encodeURIComponent(parentId)}?limit=100`
-      try {
-        const relRes = await fetch(relationsUrl, {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            Accept: 'application/json',
-          },
-        })
-        if (!relRes.ok) {
-          console.warn('[getOlderMessages] /relations failed:', { parentId, status: relRes.status })
-          return
-        }
-        const relData = await relRes.json()
-        const relChunk = Array.isArray(relData?.chunk) ? relData.chunk : []
-        if (relChunk.length > 0) {
-          console.warn('[getOlderMessages] /relations found children:', {
-            parentId,
-            childCount: relChunk.length,
-            childIds: relChunk.map((c) => c.event_id),
-          })
-        }
-        for (const childEv of relChunk) {
-          if (childEv?.event_id && childEv?.type === 'm.room.message') {
-            replyMap.set(childEv.event_id, {
-              parentEventId: parentId,
-              parentSender: parentEv.sender || '',
-              parentBody: parentEv.content?.['m.new_content']?.body || parentEv.content?.body || '',
-            })
-          }
-        }
-      } catch (err) {
-        console.warn('[getOlderMessages] /relations error:', { parentId, error: err?.message })
-      }
+  // DIAGNOSTIC: Dump first 3 message events to see exact content structure from Synapse
+  const diagEvents = chunk.filter((ev) => ev?.type === 'm.room.message').slice(0, 3)
+  for (const ev of diagEvents) {
+    console.warn('[getOlderMessages] DIAGNOSTIC event:', {
+      eventId: ev.event_id,
+      hasRelatesTo: !!ev.content?.['m.relates_to'],
+      relatesTo: ev.content?.['m.relates_to'] || null,
+      bodyPrefix: (ev.content?.body || '').substring(0, 80),
+      hasFormattedBody: !!ev.content?.formatted_body,
+      formattedBodyPrefix: (ev.content?.formatted_body || '').substring(0, 120),
+      contentKeys: Object.keys(ev.content || {}),
+      unsignedKeys: Object.keys(ev.unsigned || {}),
     })
-  )
-
-  // Build lookup map of all events in chunk for resolving sender/body
-  const eventMap = new Map()
-  for (const ev of chunk) {
-    if (ev && ev.event_id) {
-      eventMap.set(ev.event_id, ev)
-    }
   }
 
-  // Enrich events with replyTo data from the replyMap (built via /relations endpoint).
-  // Synapse strips m.relates_to from /messages responses, so we use the reverse mapping
-  // from /relations/{parentEventId} to determine which events are replies.
+  // Strategy: Extract reply info from legacy rich reply fallback in event content.
+  // Even though Synapse strips m.relates_to, the formatted_body should contain <mx-reply>
+  // tags with the parent event ID, and the body should start with "> " fallback lines.
+  // Parse these to reconstruct reply relationships.
+
   return chunk
     .filter((ev) => ev && ev.type === 'm.room.message' && ev.content)
     .map((ev) => {
       const newContent = ev.content?.['m.new_content']
+      const body = newContent?.body || ev.content?.body || ''
+      const formattedBody = newContent?.formatted_body || ev.content?.formatted_body || ''
 
-      // Check if this event is a reply using the replyMap built from /relations calls
-      const replyInfo = replyMap.get(ev.event_id)
+      // Try to extract reply info from multiple sources:
+      // 1. m.relates_to (may be stripped by Synapse but check anyway)
+      // 2. Legacy <mx-reply> tag in formatted_body
+      // 3. Legacy "> " fallback prefix in body
       let replyToData = null
-      if (replyInfo) {
+
+      // Source 1: Direct m.relates_to (unlikely to work due to Synapse stripping)
+      const relatesTo = ev.content?.['m.relates_to']
+      if (relatesTo?.['m.in_reply_to']?.event_id) {
         replyToData = {
-          eventId: replyInfo.parentEventId,
-          sender: replyInfo.parentSender,
-          body: replyInfo.parentBody,
+          eventId: relatesTo['m.in_reply_to'].event_id,
+          sender: '', // Will be resolved below if needed
+          body: '',
+        }
+      }
+
+      // Source 2: Parse <mx-reply> from formatted_body
+      // Format: <mx-reply><blockquote><a href="https://matrix.to/#/!room/$event">In reply to</a> <a href="https://matrix.to/#/@user:server">@user:server</a><br>original message</blockquote></mx-reply>actual reply
+      if (!replyToData && formattedBody.includes('<mx-reply>')) {
+        const eventMatch = formattedBody.match(/\$[A-Za-z0-9_\-+/=]+/)
+        const userMatch = formattedBody.match(/@[^"<]+:[^"<]+/)
+        const bodyMatch = formattedBody.match(/<\/blockquote><\/mx-reply>([\s\S]*)$/)
+        if (eventMatch) {
+          replyToData = {
+            eventId: eventMatch[0],
+            sender: userMatch ? userMatch[0] : '',
+            body: '', // Parent body not reliably in formatted_body
+          }
+        }
+      }
+
+      // Source 3: Parse "> " fallback from plain body
+      // Format: "> <@user:server> original message\n\nactual reply"
+      if (!replyToData && body.startsWith('> ')) {
+        const lines = body.split('\n')
+        const fallbackLines = []
+        let replyStartIdx = 0
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].startsWith('> ')) {
+            fallbackLines.push(lines[i].substring(2))
+          } else if (lines[i] === '' && fallbackLines.length > 0) {
+            replyStartIdx = i + 1
+            break
+          } else {
+            break
+          }
+        }
+        if (fallbackLines.length > 0) {
+          // First fallback line often contains "<@user:server>" or just the message
+          const userMatch = fallbackLines[0]?.match(/<(@[^>]+)>/)
+          replyToData = {
+            eventId: '', // Can't get parent event ID from plain body fallback alone
+            sender: userMatch ? userMatch[1] : '',
+            body: fallbackLines.join('\n'),
+          }
         }
       }
 
@@ -320,9 +323,9 @@ export async function getOlderMessages(roomId, { limit = 20, from, accessToken, 
         eventId: ev.event_id,
         roomId: ev.room_id || roomId,
         sender: ev.sender,
-        body: newContent?.body || ev.content?.body || '',
+        body,
         originServerTs: ev.origin_server_ts || Date.now(),
-        ...(replyToData ? { replyTo: replyToData } : {}),
+        ...(replyToData && replyToData.eventId ? { replyTo: replyToData } : {}),
         ...(ev.unsigned?.redacted_because ? { redacted: true } : {}),
         senderAvatarUrl: null,
       }
