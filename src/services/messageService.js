@@ -260,23 +260,23 @@ export async function getOlderMessages(roomId, { limit = 20, from, accessToken, 
     })
   )
 
-  // Debug: check if individual fetches restored m.relates_to
+  // Debug: check for reply fallback in body/formatted_body since Synapse strips m.relates_to
   const msgEventsFull = fullEvents.filter((ev) => ev?.type === 'm.room.message')
-  const withRelatesTo = msgEventsFull.filter((ev) => !!ev.content?.['m.relates_to'])
-  const withUnsignedRelations = msgEventsFull.filter((ev) => !!ev.unsigned?.['m.relations'])
-  console.warn('[getOlderMessages] After individual fetch:', {
+  const withReplyFallback = msgEventsFull.filter((ev) => {
+    const body = ev.content?.body || ''
+    const formatted = ev.content?.formatted_body || ''
+    return body.startsWith('> ') || formatted.includes('<mx-reply>')
+  })
+  console.warn('[getOlderMessages] Reply fallback check:', {
     roomId,
     total: fullEvents.length,
     messageEvents: msgEventsFull.length,
-    withRelatesTo: withRelatesTo.length,
-    withUnsignedRelations: withUnsignedRelations.length,
-    samples: withRelatesTo.slice(0, 3).map((ev) => ({
+    withReplyFallback: withReplyFallback.length,
+    samples: withReplyFallback.slice(0, 3).map((ev) => ({
       eventId: ev.event_id,
-      relatesTo: ev.content?.['m.relates_to'],
-    })),
-    unsignedSamples: withUnsignedRelations.slice(0, 3).map((ev) => ({
-      eventId: ev.event_id,
-      unsignedRelations: ev.unsigned?.['m.relations'],
+      bodyPreview: (ev.content?.body || '').slice(0, 120),
+      hasFormattedBody: !!ev.content?.formatted_body,
+      formattedPreview: (ev.content?.formatted_body || '').slice(0, 200),
     })),
   })
 
