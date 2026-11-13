@@ -235,7 +235,7 @@ export async function getOlderMessages(roomId, { limit = 20, from, accessToken, 
   const chunk = Array.isArray(data?.chunk) ? data.chunk : []
 
   // Synapse's /messages endpoint strips m.relates_to from event content.
-  // Fetch each event individually to get the full content with reply relations.
+  // Fetch each event individually via /event/{eventId} to restore reply relations.
   const fullEvents = await Promise.all(
     chunk.map(async (ev) => {
       if (!ev?.event_id) return ev
@@ -251,12 +251,34 @@ export async function getOlderMessages(roomId, { limit = 20, from, accessToken, 
         if (eventRes.ok) {
           return await eventRes.json()
         }
-        return ev // fallback to chunk event if individual fetch fails
-      } catch {
+        console.warn('[getOlderMessages] Individual event fetch failed:', { eventId: ev.event_id, status: eventRes.status })
+        return ev
+      } catch (err) {
+        console.warn('[getOlderMessages] Individual event fetch error:', { eventId: ev.event_id, error: err?.message })
         return ev
       }
     })
   )
+
+  // Debug: check if individual fetches restored m.relates_to
+  const msgEventsFull = fullEvents.filter((ev) => ev?.type === 'm.room.message')
+  const withRelatesTo = msgEventsFull.filter((ev) => !!ev.content?.['m.relates_to'])
+  const withUnsignedRelations = msgEventsFull.filter((ev) => !!ev.unsigned?.['m.relations'])
+  console.warn('[getOlderMessages] After individual fetch:', {
+    roomId,
+    total: fullEvents.length,
+    messageEvents: msgEventsFull.length,
+    withRelatesTo: withRelatesTo.length,
+    withUnsignedRelations: withUnsignedRelations.length,
+    samples: withRelatesTo.slice(0, 3).map((ev) => ({
+      eventId: ev.event_id,
+      relatesTo: ev.content?.['m.relates_to'],
+    })),
+    unsignedSamples: withUnsignedRelations.slice(0, 3).map((ev) => ({
+      eventId: ev.event_id,
+      unsignedRelations: ev.unsigned?.['m.relations'],
+    })),
+  })
 
   // Build a lookup map of full events to resolve replyTo sender/body
   const eventMap = new Map()
