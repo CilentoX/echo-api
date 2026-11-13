@@ -261,9 +261,19 @@ export async function getOlderMessages(roomId, { limit = 20, from, accessToken, 
             Accept: 'application/json',
           },
         })
-        if (!relRes.ok) return
+        if (!relRes.ok) {
+          console.warn('[getOlderMessages] /relations failed:', { parentId, status: relRes.status })
+          return
+        }
         const relData = await relRes.json()
         const relChunk = Array.isArray(relData?.chunk) ? relData.chunk : []
+        if (relChunk.length > 0) {
+          console.warn('[getOlderMessages] /relations found children:', {
+            parentId,
+            childCount: relChunk.length,
+            childIds: relChunk.map((c) => c.event_id),
+          })
+        }
         for (const childEv of relChunk) {
           if (childEv?.event_id && childEv?.type === 'm.room.message') {
             replyMap.set(childEv.event_id, {
@@ -273,8 +283,8 @@ export async function getOlderMessages(roomId, { limit = 20, from, accessToken, 
             })
           }
         }
-      } catch {
-        // Skip this parent if /relations fails
+      } catch (err) {
+        console.warn('[getOlderMessages] /relations error:', { parentId, error: err?.message })
       }
     })
   )
