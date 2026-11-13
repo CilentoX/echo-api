@@ -242,6 +242,19 @@ export async function getOlderMessages(roomId, { limit = 20, from, accessToken, 
     }
   }
 
+  // Debug: inspect raw events from Synapse for m.relates_to
+  const withRelatesTo = chunk.filter((ev) => ev?.content?.['m.relates_to'])
+  console.warn('[getOlderMessages] Raw chunk inspection:', {
+    roomId,
+    totalEvents: chunk.length,
+    withRelatesTo: withRelatesTo.length,
+    relatesToSamples: withRelatesTo.slice(0, 3).map((ev) => ({
+      eventId: ev.event_id,
+      relatesTo: ev.content?.['m.relates_to'],
+      contentKeys: Object.keys(ev.content || {}),
+    })),
+  })
+
   return chunk
     .filter((ev) => ev && ev.type === 'm.room.message' && ev.content)
     .map((ev) => {
@@ -249,7 +262,11 @@ export async function getOlderMessages(roomId, { limit = 20, from, accessToken, 
       const replyEventId = relatesTo?.['m.in_reply_to']?.event_id
       const newContent = ev.content?.['m.new_content']
 
-      // Resolve replyTo sender and body from the same chunk when available
+      // Resolve replyTo sender and body from the same chunk when available.
+      // Always include replyTo with at least the eventId so the client can
+      // render the reply chip even when the replied-to message is in a
+      // different chunk or not yet loaded. The client-side normalizeSyncEvent
+      // will attempt to resolve sender/body from its timeline cache.
       let replyToData = null
       if (replyEventId) {
         const repliedEv = eventMap.get(replyEventId)
