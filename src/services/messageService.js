@@ -234,32 +234,39 @@ export async function getOlderMessages(roomId, { limit = 20, from, accessToken, 
   const data = await res.json()
   const chunk = Array.isArray(data?.chunk) ? data.chunk : []
 
-  // Build a lookup map of events in this chunk to resolve replyTo sender/body
+  // Synapse's /messages endpoint strips m.relates_to from event content.
+  // Fetch each event individually to get the full content with reply relations.
+  const fullEvents = await Promise.all(
+    chunk.map(async (ev) => {
+      if (!ev?.event_id) return ev
+      const eventUrl = `${baseUrl}/_matrix/client/v3/rooms/${encodedRoomId}/event/${encodeURIComponent(ev.event_id)}`
+      try {
+        const eventRes = await fetch(eventUrl, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            Accept: 'application/json',
+          },
+        })
+        if (eventRes.ok) {
+          return await eventRes.json()
+        }
+        return ev // fallback to chunk event if individual fetch fails
+      } catch {
+        return ev
+      }
+    })
+  )
+
+  // Build a lookup map of full events to resolve replyTo sender/body
   const eventMap = new Map()
-  for (const ev of chunk) {
+  for (const ev of fullEvents) {
     if (ev && ev.event_id) {
       eventMap.set(ev.event_id, ev)
     }
   }
 
-  // Debug: inspect ALL raw message events to find why m.relates_to is missing
-  const msgEvents = chunk.filter((ev) => ev?.type === 'm.room.message')
-  console.warn('[getOlderMessages] Full raw event inspection:', {
-    roomId,
-    totalChunk: chunk.length,
-    messageEvents: msgEvents.length,
-    samples: msgEvents.slice(0, 8).map((ev) => ({
-      eventId: ev.event_id,
-      sender: ev.sender,
-      bodyPreview: (ev.content?.body || '').slice(0, 50),
-      contentKeys: Object.keys(ev.content || {}),
-      hasRelatesTo: !!ev.content?.['m.relates_to'],
-      unsignedKeys: Object.keys(ev.unsigned || {}),
-      unsignedRelatesTo: ev.unsigned?.['m.relations'] || ev.unsigned?.['m.relates_to'] || null,
-    })),
-  })
-
-  return chunk
+  return fullEvents
     .filter((ev) => ev && ev.type === 'm.room.message' && ev.content)
     .map((ev) => {
       const relatesTo = ev.content?.['m.relates_to']
