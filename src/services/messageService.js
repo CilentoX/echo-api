@@ -234,80 +234,75 @@ export async function getOlderMessages(roomId, { limit = 20, from, accessToken, 
   const data = await res.json()
   const chunk = Array.isArray(data?.chunk) ? data.chunk : []
 
-  // Synapse's /messages endpoint strips m.relates_to from event content.
-  // Fetch each event individually via /event/{eventId} to restore reply relations.
-  const fullEvents = await Promise.all(
-    chunk.map(async (ev) => {
-      if (!ev?.event_id) return ev
-      const eventUrl = `${baseUrl}/_matrix/client/v3/rooms/${encodedRoomId}/event/${encodeURIComponent(ev.event_id)}`
+  // Synapse's /messages endpoint strips m.relates_to from event content during serialization.
+  // The /relations/{parentEventId} endpoint queries the event_relations table directly and
+  // returns child events (replies) with full content. Use this to build a reverse mapping:
+  // for each event in the chunk, find what it replies to by checking which parent's
+  // /relations response includes it.
+  //
+  // Strategy: For each message event, call /relations/{eventId} to get its replies.
+  // Build a map: replyEventId -> { parentEventId, parentSender, parentBody }
+  // Then enrich each event with replyTo data from this map.
+
+  const msgEvents = chunk.filter((ev) => ev?.type === 'm.room.message' && ev?.event_id)
+
+  // Fetch relations for all message events in parallel (batch of /relations calls)
+  const replyMap = new Map() // replyEventId -> { parentEventId, parentSender, parentBody }
+
+  await Promise.all(
+    msgEvents.map(async (parentEv) => {
+      const parentId = parentEv.event_id
+      const relationsUrl = `${baseUrl}/_matrix/client/v1/rooms/${encodedRoomId}/relations/${encodeURIComponent(parentId)}?limit=100`
       try {
-        const eventRes = await fetch(eventUrl, {
+        const relRes = await fetch(relationsUrl, {
           method: 'GET',
           headers: {
             Authorization: `Bearer ${accessToken}`,
             Accept: 'application/json',
           },
         })
-        if (eventRes.ok) {
-          return await eventRes.json()
+        if (!relRes.ok) return
+        const relData = await relRes.json()
+        const relChunk = Array.isArray(relData?.chunk) ? relData.chunk : []
+        for (const childEv of relChunk) {
+          if (childEv?.event_id && childEv?.type === 'm.room.message') {
+            replyMap.set(childEv.event_id, {
+              parentEventId: parentId,
+              parentSender: parentEv.sender || '',
+              parentBody: parentEv.content?.['m.new_content']?.body || parentEv.content?.body || '',
+            })
+          }
         }
-        console.warn('[getOlderMessages] Individual event fetch failed:', { eventId: ev.event_id, status: eventRes.status })
-        return ev
-      } catch (err) {
-        console.warn('[getOlderMessages] Individual event fetch error:', { eventId: ev.event_id, error: err?.message })
-        return ev
+      } catch {
+        // Skip this parent if /relations fails
       }
     })
   )
 
-  // Debug: check for reply fallback in body/formatted_body since Synapse strips m.relates_to
-  const msgEventsFull = fullEvents.filter((ev) => ev?.type === 'm.room.message')
-  const withReplyFallback = msgEventsFull.filter((ev) => {
-    const body = ev.content?.body || ''
-    const formatted = ev.content?.formatted_body || ''
-    return body.startsWith('> ') || formatted.includes('<mx-reply>')
-  })
-  console.warn('[getOlderMessages] Reply fallback check:', {
-    roomId,
-    total: fullEvents.length,
-    messageEvents: msgEventsFull.length,
-    withReplyFallback: withReplyFallback.length,
-    samples: withReplyFallback.slice(0, 3).map((ev) => ({
-      eventId: ev.event_id,
-      bodyPreview: (ev.content?.body || '').slice(0, 120),
-      hasFormattedBody: !!ev.content?.formatted_body,
-      formattedPreview: (ev.content?.formatted_body || '').slice(0, 200),
-    })),
-  })
-
-  // Build a lookup map of full events to resolve replyTo sender/body
+  // Build lookup map of all events in chunk for resolving sender/body
   const eventMap = new Map()
-  for (const ev of fullEvents) {
+  for (const ev of chunk) {
     if (ev && ev.event_id) {
       eventMap.set(ev.event_id, ev)
     }
   }
 
-  return fullEvents
+  // Enrich events with replyTo data from the replyMap (built via /relations endpoint).
+  // Synapse strips m.relates_to from /messages responses, so we use the reverse mapping
+  // from /relations/{parentEventId} to determine which events are replies.
+  return chunk
     .filter((ev) => ev && ev.type === 'm.room.message' && ev.content)
     .map((ev) => {
-      const relatesTo = ev.content?.['m.relates_to']
-      const replyEventId = relatesTo?.['m.in_reply_to']?.event_id
       const newContent = ev.content?.['m.new_content']
 
-      // Resolve replyTo sender and body from the same chunk when available.
-      // Always include replyTo with at least the eventId so the client can
-      // render the reply chip even when the replied-to message is in a
-      // different chunk or not yet loaded. The client-side normalizeSyncEvent
-      // will attempt to resolve sender/body from its timeline cache.
+      // Check if this event is a reply using the replyMap built from /relations calls
+      const replyInfo = replyMap.get(ev.event_id)
       let replyToData = null
-      if (replyEventId) {
-        const repliedEv = eventMap.get(replyEventId)
-        const repliedBody = repliedEv?.content?.['m.new_content']?.body || repliedEv?.content?.body || ''
+      if (replyInfo) {
         replyToData = {
-          eventId: replyEventId,
-          sender: repliedEv?.sender || '',
-          body: repliedBody,
+          eventId: replyInfo.parentEventId,
+          sender: replyInfo.parentSender,
+          body: replyInfo.parentBody,
         }
       }
 
