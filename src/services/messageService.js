@@ -242,16 +242,20 @@ export async function getOlderMessages(roomId, { limit = 20, from, accessToken, 
     }
   }
 
-  // Debug: inspect raw events from Synapse for m.relates_to
-  const withRelatesTo = chunk.filter((ev) => ev?.content?.['m.relates_to'])
-  console.warn('[getOlderMessages] Raw chunk inspection:', {
+  // Debug: inspect ALL raw message events to find why m.relates_to is missing
+  const msgEvents = chunk.filter((ev) => ev?.type === 'm.room.message')
+  console.warn('[getOlderMessages] Full raw event inspection:', {
     roomId,
-    totalEvents: chunk.length,
-    withRelatesTo: withRelatesTo.length,
-    relatesToSamples: withRelatesTo.slice(0, 3).map((ev) => ({
+    totalChunk: chunk.length,
+    messageEvents: msgEvents.length,
+    samples: msgEvents.slice(0, 8).map((ev) => ({
       eventId: ev.event_id,
-      relatesTo: ev.content?.['m.relates_to'],
+      sender: ev.sender,
+      bodyPreview: (ev.content?.body || '').slice(0, 50),
       contentKeys: Object.keys(ev.content || {}),
+      hasRelatesTo: !!ev.content?.['m.relates_to'],
+      unsignedKeys: Object.keys(ev.unsigned || {}),
+      unsignedRelatesTo: ev.unsigned?.['m.relations'] || ev.unsigned?.['m.relates_to'] || null,
     })),
   })
 
