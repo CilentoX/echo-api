@@ -209,7 +209,7 @@ export const guildProfileService = {
   async getChannels(guildId) {
     let channels = await prisma.channelProfile.findMany({
       where: { guildId },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
     })
 
     // If guild has no channels registered yet, provision a default #geral channel
@@ -238,6 +238,7 @@ export const guildProfileService = {
       topic: c.topic || '',
       type: c.type || 'text',
       category: c.category || (c.type === 'voice' ? 'CANAIS DE VOZ' : 'CANAIS DE TEXTO'),
+      position: c.position ?? 0,
       unreadCount: 0,
     }))
   },
@@ -872,12 +873,20 @@ export const guildProfileService = {
    * Reorder channels within a guild (requires MANAGE_CHANNELS).
    */
   async reorderChannels(guildId, orderedChannelIds) {
-    const updates = orderedChannelIds.map((id, idx) =>
-      prisma.channelProfile.update({
-        where: { id },
-        data: { position: idx },
+    const updates = orderedChannelIds.map((item, idx) => {
+      const channelId = typeof item === 'string' ? item : item?.channelId || item?.id
+      const category = typeof item === 'object' ? item?.category : undefined
+      return prisma.channelProfile.updateMany({
+        where: {
+          guildId,
+          OR: [{ id: channelId }, { matrixRoomId: channelId }],
+        },
+        data: {
+          position: idx,
+          ...(category !== undefined ? { category } : {}),
+        },
       })
-    )
+    })
     await Promise.all(updates)
     return { success: true }
   },
@@ -886,7 +895,7 @@ export const guildProfileService = {
    * Reorder categories within a guild (requires MANAGE_CHANNELS).
    */
   async reorderCategories(guildId, orderedCategoryNames) {
-    await prisma.guildProfile.update({
+    await prisma.guildProfile.updateMany({
       where: { guildId },
       data: { categoryOrder: orderedCategoryNames },
     })

@@ -635,10 +635,14 @@ export function registerGuildRoutes(app) {
   }
 
   app.patch('/guilds/:guildId/channels/reorder', { preHandler: authenticate }, handleReorderChannels)
+  app.put('/guilds/:guildId/channels/reorder', { preHandler: authenticate }, handleReorderChannels)
   app.patch('/api/guilds/:guildId/channels/reorder', { preHandler: authenticate }, handleReorderChannels)
+  app.put('/api/guilds/:guildId/channels/reorder', { preHandler: authenticate }, handleReorderChannels)
 
   app.patch('/guilds/:guildId/categories/reorder', { preHandler: authenticate }, handleReorderCategories)
+  app.put('/guilds/:guildId/categories/reorder', { preHandler: authenticate }, handleReorderCategories)
   app.patch('/api/guilds/:guildId/categories/reorder', { preHandler: authenticate }, handleReorderCategories)
+  app.put('/api/guilds/:guildId/categories/reorder', { preHandler: authenticate }, handleReorderCategories)
 
   app.put('/users/me/guilds/order', { preHandler: authenticate }, handleSetMyGuildOrder)
   app.put('/api/users/me/guilds/order', { preHandler: authenticate }, handleSetMyGuildOrder)
