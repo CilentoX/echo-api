@@ -13,13 +13,13 @@ const createGuildBodySchema = {
   required: ['name'],
   properties: {
     name: Type.String({ minLength: 1, maxLength: 100 }),
-    iconUrl: Type.Optional(Type.String({ format: 'uri' })),
-    avatarUrl: Type.Optional(Type.String({ format: 'uri' })),
-    bannerUrl: Type.Optional(Type.String({ format: 'uri' })),
-    description: Type.Optional(Type.String({ maxLength: 500 })),
-    createdBy: Type.Optional(Type.String()),
+    iconUrl: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    avatarUrl: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    bannerUrl: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    description: Type.Optional(Type.Union([Type.String({ maxLength: 500 }), Type.Null()])),
+    createdBy: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   },
-  additionalProperties: false,
+  additionalProperties: true,
 }
 
 export function registerGuildRoutes(app) {
