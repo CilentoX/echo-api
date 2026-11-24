@@ -22,7 +22,8 @@ export function initiateGoogleSso(redirectUrl, idpId = 'oidc-google') {
 
   // Build the Synapse Matrix SSO redirect URL
   const provider = idpId || 'oidc-google'
-  const loginUrl = `${process.env.SYNAPSE_URL}/_matrix/client/v3/login/sso/redirect/${provider}?redirectUrl=${encodeURIComponent(
+  const synapseUrl = (process.env.SYNAPSE_URL || 'https://echo.litteris.online').replace(/\/$/, '')
+  const loginUrl = `${synapseUrl}/_matrix/client/v3/login/sso/redirect/${provider}?redirectUrl=${encodeURIComponent(
     redirectUrl,
   )}`
 
@@ -49,7 +50,8 @@ export async function exchangeCodeForTokens(code, state, prisma = null) {
   }
 
   // Call Synapse /_matrix/client/v3/login to exchange token for access_token
-  const synapseResponse = await fetch(`${process.env.SYNAPSE_URL}/_matrix/client/v3/login`, {
+  const synapseUrl = (process.env.SYNAPSE_URL || 'https://echo.litteris.online').replace(/\/$/, '')
+  const synapseResponse = await fetch(`${synapseUrl}/_matrix/client/v3/login`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

@@ -60,6 +60,18 @@ describe('authService - initiateGoogleSso', () => {
       // State should be base64-like
       expect(/^[A-Za-z0-9+/_-]+=*$/.test(result1.state)).toBe(true)
     })
+
+    it('should fallback to default https://echo.litteris.online when SYNAPSE_URL is undefined', async () => {
+      const orig = process.env.SYNAPSE_URL
+      delete process.env.SYNAPSE_URL
+      try {
+        const result = await authService.initiateGoogleSso('http://localhost:3000/auth/callback')
+        expect(result.loginUrl).not.toContain('undefined')
+        expect(result.loginUrl).toMatch(/^https:\/\/echo\.litteris\.online\/_matrix\/client\/v3\/login\/sso\/redirect\/oidc-google/)
+      } finally {
+        process.env.SYNAPSE_URL = orig
+      }
+    })
   })
 
   describe('authService - exchangeCodeForTokens', () => {
