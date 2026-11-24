@@ -274,3 +274,17 @@ export async function authenticate(request, reply) {
   // No authentication provided
   reply.code(401).send({ error: 'Unauthorized: no authentication credentials' })
 }
+
+
+/**
+ * Invalida entradas do cache de tokens para um userId especifico.
+ * Chamado no logout para revogacao imediata.
+ */
+export function invalidateTokenCache(userId) {
+  if (!userId) return;
+  for (const [key, value] of synapseTokenCache.cache.entries()) {
+    if (value.user && value.user.userId === userId) {
+      synapseTokenCache.delete(key);
+    }
+  }
+}

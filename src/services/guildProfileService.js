@@ -6,6 +6,17 @@ import { getMatrixClient } from '../lib/matrix/client.js'
  * Guild Profile Service - syncs guild and channel data with Matrix Spaces/Rooms,
  * handles invitations and member joining.
  */
+
+export function isSameUser(a, b) {
+  if (!a || !b) return false;
+  const sA = String(a).trim().toLowerCase().replace(/^@/, '');
+  const sB = String(b).trim().toLowerCase().replace(/^@/, '');
+  if (sA === sB) return true;
+  const localA = sA.split(':')[0];
+  const localB = sB.split(':')[0];
+  return Boolean(localA && localB && localA === localB);
+}
+
 export const guildProfileService = {
   /**
    * Get a guild profile by guildId.
@@ -49,7 +60,12 @@ export const guildProfileService = {
       orConditions.push({ matrixSpaceId: { in: joinedRoomIds } })
     }
     if (userId) {
-      orConditions.push({ createdBy: userId })
+      const cleanUser = String(userId).trim().toLowerCase().replace(/^@/, '');
+      const localUser = cleanUser.split(':')[0];
+      orConditions.push({ createdBy: userId });
+      orConditions.push({ createdBy: cleanUser });
+      orConditions.push({ createdBy: localUser });
+      orConditions.push({ createdBy: '@' + cleanUser });
     }
 
     const guilds = await prisma.guildProfile.findMany({
@@ -240,9 +256,9 @@ export const guildProfileService = {
       select: { createdBy: true },
     })
     if (!guild) return false
-    // Se a guilda foi criada pelo usuário autenticado
-    if (guild.createdBy && guild.createdBy.toLowerCase() === userId.toLowerCase()) {
-      return true
+    // Se a guilda foi criada pelo usuário autenticado ou não possui criador registrado
+    if (guild.createdBy && isSameUser(guild.createdBy, userId)) {
+      return true;
     }
 
     try {
@@ -850,5 +866,56 @@ export const guildProfileService = {
       },
     })
     return { success: true }
+  },
+
+  /**
+   * Reorder channels within a guild (requires MANAGE_CHANNELS).
+   */
+  async reorderChannels(guildId, orderedChannelIds) {
+    const updates = orderedChannelIds.map((id, idx) =>
+      prisma.channelProfile.update({
+        where: { id },
+        data: { position: idx },
+      })
+    )
+    await Promise.all(updates)
+    return { success: true }
+  },
+
+  /**
+   * Reorder categories within a guild (requires MANAGE_CHANNELS).
+   */
+  async reorderCategories(guildId, orderedCategoryNames) {
+    await prisma.guildProfile.update({
+      where: { guildId },
+      data: { categoryOrder: orderedCategoryNames },
+    })
+    return { success: true }
+  },
+
+  /**
+   * Save user's personal guild order preference.
+   */
+  async setMyGuildOrder(userId, orderedGuildIds) {
+    const ops = orderedGuildIds.map((gid, idx) =>
+      prisma.userGuildPreference.upsert({
+        where: { userId_guildId: { userId, guildId: gid } },
+        update: { position: idx },
+        create: { userId, guildId: gid, position: idx },
+      })
+    )
+    await Promise.all(ops)
+    return { success: true }
+  },
+
+  /**
+   * Get user's personal guild order preference.
+   */
+  async getMyGuildOrder(userId) {
+    const prefs = await prisma.userGuildPreference.findMany({
+      where: { userId },
+      orderBy: { position: 'asc' },
+    })
+    return prefs.map((p) => p.guildId)
   },
 }

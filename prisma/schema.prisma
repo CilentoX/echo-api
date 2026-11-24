@@ -55,6 +55,7 @@ model GuildProfile {
   maxMembers    Int?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  categoryOrder Json     @default("[]")
   channels      ChannelProfile[]
   invites       GuildInvite[]
   roles         GuildRole[]
@@ -69,6 +70,7 @@ model ChannelProfile {
   topic        String?
   type         String   @default("text")
   category     String?
+  position     Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -167,3 +169,14 @@ model GuildMemberProfile {
 }
 
 
+
+model UserGuildPreference {
+  id        String   @id @default(cuid())
+  userId    String
+  guildId   String
+  position  Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, guildId])
+  @@index([userId])
+}

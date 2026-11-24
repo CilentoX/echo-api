@@ -233,22 +233,6 @@ export async function getOlderMessages(roomId, { limit = 20, from, accessToken, 
 
   const data = await res.json()
   const chunk = Array.isArray(data?.chunk) ? data.chunk : []
-
-  // DIAGNOSTIC: Dump first 3 message events to see exact content structure from Synapse
-  const diagEvents = chunk.filter((ev) => ev?.type === 'm.room.message').slice(0, 3)
-  for (const ev of diagEvents) {
-    console.warn('[getOlderMessages] DIAGNOSTIC event:', {
-      eventId: ev.event_id,
-      hasRelatesTo: !!ev.content?.['m.relates_to'],
-      relatesTo: ev.content?.['m.relates_to'] || null,
-      bodyPrefix: (ev.content?.body || '').substring(0, 80),
-      hasFormattedBody: !!ev.content?.formatted_body,
-      formattedBodyPrefix: (ev.content?.formatted_body || '').substring(0, 120),
-      contentKeys: Object.keys(ev.content || {}),
-      unsignedKeys: Object.keys(ev.unsigned || {}),
-    })
-  }
-
   // Strategy: Extract reply info from legacy rich reply fallback in event content.
   // Even though Synapse strips m.relates_to, the formatted_body should contain <mx-reply>
   // tags with the parent event ID, and the body should start with "> " fallback lines.
@@ -331,3 +315,4 @@ export async function getOlderMessages(roomId, { limit = 20, from, accessToken, 
       }
     })
 }
+

@@ -45,8 +45,8 @@ export function registerFriendRoutes(app) {
     }
   }
 
-  app.get('/friends/discover', { preHandler: authenticate }, handleDiscover)
-  app.get('/api/friends/discover', { preHandler: authenticate }, handleDiscover)
+  app.get('/friends/discover', { preHandler: authenticate, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, handleDiscover)
+  app.get('/api/friends/discover', { preHandler: authenticate, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, handleDiscover)
 
   const handleSendRequest = async (request, reply) => {
     try {
@@ -65,8 +65,8 @@ export function registerFriendRoutes(app) {
     }
   }
 
-  app.post('/friends/request', { preHandler: authenticate }, handleSendRequest)
-  app.post('/api/friends/request', { preHandler: authenticate }, handleSendRequest)
+  app.post('/friends/request', { preHandler: authenticate, config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, handleSendRequest)
+  app.post('/api/friends/request', { preHandler: authenticate, config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, handleSendRequest)
 
   const handleAccept = async (request, reply) => {
     try {

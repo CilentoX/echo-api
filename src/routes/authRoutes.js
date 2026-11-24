@@ -1,5 +1,6 @@
 import Fastify from 'fastify'
 import { initiateGoogleSso, exchangeCodeForTokens, refreshTokens } from '../services/authService.js'
+import { authenticate, invalidateTokenCache } from '../plugins/auth.js'
 
 /**
  * Registers Google SSO authentication routes.
@@ -15,6 +16,15 @@ import { initiateGoogleSso, exchangeCodeForTokens, refreshTokens } from '../serv
  * @returns {void}
  */
 export function registerAuthRoutes(app) {
+  /**
+   * POST /auth/invalidate-cache
+   * Invalida o cache de tokens do usuario autenticado (chamado no logout).
+   */
+  app.post('/auth/invalidate-cache', { preHandler: authenticate }, async (request, reply) => {
+    invalidateTokenCache(request.user.userId);
+    return reply.code(200).send({ success: true });
+  });
+
   /**
    * GET /auth/google
    * Initiates the Google SSO login flow.

@@ -1,3 +1,4 @@
+import { Type } from '@sinclair/typebox'
 import { authenticate } from '../plugins/auth.js'
 import { guildProfileService } from '../services/guildProfileService.js'
 
@@ -7,6 +8,20 @@ import { guildProfileService } from '../services/guildProfileService.js'
  *
  * @param {import('fastify').FastifyInstance} app
  */
+const createGuildBodySchema = {
+  type: 'object',
+  required: ['name'],
+  properties: {
+    name: Type.String({ minLength: 1, maxLength: 100 }),
+    iconUrl: Type.Optional(Type.String({ format: 'uri' })),
+    avatarUrl: Type.Optional(Type.String({ format: 'uri' })),
+    bannerUrl: Type.Optional(Type.String({ format: 'uri' })),
+    description: Type.Optional(Type.String({ maxLength: 500 })),
+    createdBy: Type.Optional(Type.String()),
+  },
+  additionalProperties: false,
+}
+
 export function registerGuildRoutes(app) {
   // ── Guilds Endpoints ──────────────────────────────────────────────
 
@@ -29,12 +44,11 @@ export function registerGuildRoutes(app) {
   const handleCreateGuild = async (request, reply) => {
     try {
       const { name, iconUrl, avatarUrl, bannerUrl, description, createdBy } = request.body || {}
-      if (!name || typeof name !== 'string' || !name.trim()) {
-        return reply.code(400).send({ error: 'Nome da guilda é obrigatório' })
-      }
+      // Validação feita pelo schema TypeBox acima
+      const trimmedName = name.trim()
 
       const guild = await guildProfileService.createGuild({
-        name: name.trim(),
+        name: trimmedName,
         iconUrl: iconUrl || avatarUrl,
         bannerUrl,
         description,
@@ -50,8 +64,8 @@ export function registerGuildRoutes(app) {
     }
   }
 
-  app.post('/guilds', { preHandler: authenticate }, handleCreateGuild)
-  app.post('/api/guilds', { preHandler: authenticate }, handleCreateGuild)
+  app.post('/guilds', { preHandler: authenticate, schema: { body: createGuildBodySchema } }, handleCreateGuild)
+  app.post('/api/guilds', { preHandler: authenticate, schema: { body: createGuildBodySchema } }, handleCreateGuild)
 
   const handleDeleteGuild = async (request, reply) => {
     try {
@@ -557,5 +571,78 @@ export function registerGuildRoutes(app) {
 
   app.delete('/guilds/:guildId/members/:targetUserId/roles/:roleId', { preHandler: authenticate }, handleRemoveMemberRole)
   app.delete('/api/guilds/:guildId/members/:targetUserId/roles/:roleId', { preHandler: authenticate }, handleRemoveMemberRole)
-}
 
+  const handleReorderChannels = async (request, reply) => {
+    try {
+      const { guildId } = request.params
+      const { orderedChannelIds } = request.body || {}
+      if (!Array.isArray(orderedChannelIds)) {
+        return reply.code(400).send({ error: 'orderedChannelIds deve ser um array' })
+      }
+      const canManage = await guildProfileService.canUserManageChannels(guildId, request.user.userId)
+      if (!canManage) {
+        return reply.code(403).send({ error: 'Permissão negada' })
+      }
+      await guildProfileService.reorderChannels(guildId, orderedChannelIds)
+      return reply.code(200).send({ success: true })
+    } catch (err) {
+      request.log.error(err)
+      return reply.code(500).send({ error: 'Erro ao reordenar canais' })
+    }
+  }
+
+  const handleReorderCategories = async (request, reply) => {
+    try {
+      const { guildId } = request.params
+      const { orderedCategoryNames } = request.body || {}
+      if (!Array.isArray(orderedCategoryNames)) {
+        return reply.code(400).send({ error: 'orderedCategoryNames deve ser um array' })
+      }
+      const canManage = await guildProfileService.canUserManageChannels(guildId, request.user.userId)
+      if (!canManage) {
+        return reply.code(403).send({ error: 'Permissão negada' })
+      }
+      await guildProfileService.reorderCategories(guildId, orderedCategoryNames)
+      return reply.code(200).send({ success: true })
+    } catch (err) {
+      request.log.error(err)
+      return reply.code(500).send({ error: 'Erro ao reordenar categorias' })
+    }
+  }
+
+  const handleSetMyGuildOrder = async (request, reply) => {
+    try {
+      const { orderedGuildIds } = request.body || {}
+      if (!Array.isArray(orderedGuildIds)) {
+        return reply.code(400).send({ error: 'orderedGuildIds deve ser um array' })
+      }
+      await guildProfileService.setMyGuildOrder(request.user.userId, orderedGuildIds)
+      return reply.code(200).send({ success: true })
+    } catch (err) {
+      request.log.error(err)
+      return reply.code(500).send({ error: 'Erro ao salvar ordem dos servidores' })
+    }
+  }
+
+  const handleGetMyGuildOrder = async (request, reply) => {
+    try {
+      const order = await guildProfileService.getMyGuildOrder(request.user.userId)
+      return reply.code(200).send({ orderedGuildIds: order })
+    } catch (err) {
+      request.log.error(err)
+      return reply.code(500).send({ error: 'Erro ao obter ordem dos servidores' })
+    }
+  }
+
+  app.patch('/guilds/:guildId/channels/reorder', { preHandler: authenticate }, handleReorderChannels)
+  app.patch('/api/guilds/:guildId/channels/reorder', { preHandler: authenticate }, handleReorderChannels)
+
+  app.patch('/guilds/:guildId/categories/reorder', { preHandler: authenticate }, handleReorderCategories)
+  app.patch('/api/guilds/:guildId/categories/reorder', { preHandler: authenticate }, handleReorderCategories)
+
+  app.put('/users/me/guilds/order', { preHandler: authenticate }, handleSetMyGuildOrder)
+  app.put('/api/users/me/guilds/order', { preHandler: authenticate }, handleSetMyGuildOrder)
+
+  app.get('/users/me/guilds/order', { preHandler: authenticate }, handleGetMyGuildOrder)
+  app.get('/api/users/me/guilds/order', { preHandler: authenticate }, handleGetMyGuildOrder)
+}

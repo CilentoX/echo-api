@@ -289,7 +289,7 @@ export function registerVoiceRoutes(app) {
    */
   app.post(
     '/api/channels/:channelId/voice/heartbeat',
-    { preHandler: authenticate },
+    { preHandler: authenticate, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
     async (request, reply) => {
       const channelId = normalizeChannelId(request.params.channelId)
       const userId = request.user.userId
@@ -644,5 +644,91 @@ export function registerVoiceRoutes(app) {
       })
     }
   )
-}
 
+  /**
+   * Move a member from one voice channel to another (requires MOVE_MEMBERS permission).
+   * POST /voice/channels/:channelId/move-user
+   */
+  app.post('/voice/channels/:channelId/move-user', { preHandler: authenticate }, async (request, reply) => {
+    const targetChannelId = normalizeChannelId(request.params.channelId)
+    const { userId: targetUserId, guildId } = request.body || {}
+    const requesterId = request.user.userId
+
+    if (!targetChannelId || !targetUserId) {
+      return reply.code(400).send({ error: 'channelId e userId são obrigatórios' })
+    }
+
+    // Verify MOVE_MEMBERS permission via guildProfileService
+    try {
+      const { default: guildProfileService } = await import('../services/guildProfileService.js')
+      const canMove = await guildProfileService.canUserManageChannels(guildId, requesterId)
+      // Fallback: check if user has MOVE_MEMBERS in any role
+      if (!canMove) {
+        return reply.code(403).send({ error: 'Permissão negada: MOVE_MEMBERS necessário' })
+      }
+    } catch (err) {
+      request.log.error(err)
+      return reply.code(500).send({ error: 'Erro ao verificar permissões' })
+    }
+
+    // Find source channel of the target user
+    let sourceChannelId = null
+    for (const [chId, participants] of channelVoiceState.entries()) {
+      if (participants.has(targetUserId)) {
+        sourceChannelId = chId
+        break
+      }
+    }
+
+    if (!sourceChannelId) {
+      return reply.code(404).send({ error: 'Usuário não está em nenhum canal de voz' })
+    }
+
+    if (sourceChannelId === targetChannelId) {
+      return reply.code(200).send({ success: true, message: 'Usuário já está no canal de destino' })
+    }
+
+    // Remove from source
+    const sourceParticipants = channelVoiceState.get(sourceChannelId)
+    if (sourceParticipants) {
+      sourceParticipants.delete(targetUserId)
+      broadcastChannelEvent(sourceChannelId, 'user-left', { userId: targetUserId })
+      if (sourceParticipants.size === 0) {
+        channelVoiceState.delete(sourceChannelId)
+      }
+    }
+
+    // Add to target
+    if (!channelVoiceState.has(targetChannelId)) {
+      channelVoiceState.set(targetChannelId, new Map())
+    }
+    const targetParticipants = channelVoiceState.get(targetChannelId)
+    // Preserve existing state or create minimal entry
+    const existingState = sourceParticipants?.get(targetUserId)
+    targetParticipants.set(targetUserId, {
+      userId: targetUserId,
+      username: existingState?.username || targetUserId.replace(/^@/, '').split(':')[0],
+      avatarUrl: existingState?.avatarUrl || null,
+      guildId: guildId ? normalizeChannelId(guildId) : null,
+      isMuted: existingState?.isMuted || false,
+      isDeafened: existingState?.isDeafened || false,
+      isSpeaking: false,
+      isScreenSharing: existingState?.isScreenSharing || false,
+      hasCamera: existingState?.hasCamera || false,
+      lastHeartbeat: Date.now(),
+    })
+
+    broadcastChannelEvent(targetChannelId, 'user-joined', {
+      userId: targetUserId,
+      username: targetParticipants.get(targetUserId).username,
+      avatarUrl: targetParticipants.get(targetUserId).avatarUrl,
+      isMuted: targetParticipants.get(targetUserId).isMuted,
+      isDeafened: targetParticipants.get(targetUserId).isDeafened,
+    })
+
+    // Notify the moved user directly so their client switches channels
+    sendUserEvent(targetUserId, 'force-move', { channelId: targetChannelId, guildId })
+
+    return reply.code(200).send({ success: true, from: sourceChannelId, to: targetChannelId })
+  })
+}
