@@ -1,3 +1,4 @@
+import { AccessToken, WebhookReceiver } from 'livekit-server-sdk'
 import { authenticate } from '../plugins/auth.js'
 
 /**
@@ -730,5 +731,99 @@ export function registerVoiceRoutes(app) {
     sendUserEvent(targetUserId, 'force-move', { channelId: targetChannelId, guildId })
 
     return reply.code(200).send({ success: true, from: sourceChannelId, to: targetChannelId })
+  })
+
+  /**
+   * POST /api/channels/:channelId/voice/token
+   * Gera token JWT de acesso ao LiveKit SFU para o canal de voz/live.
+   * Retorna { enabled: false } quando LIVEKIT_URL/API_KEY/API_SECRET não estiverem configurados,
+   * permitindo fallback transparente para WebRTC Mesh.
+   */
+  app.post(
+    '/api/channels/:channelId/voice/token',
+    { preHandler: authenticate },
+    async (request, reply) => {
+      const channelId = normalizeChannelId(request.params.channelId)
+      const userId = request.user.userId
+      const { username, avatarUrl } = request.body || {}
+
+      if (!channelId) {
+        return reply.code(400).send({ error: 'channelId é obrigatório' })
+      }
+
+      const serverUrl = process.env.LIVEKIT_URL?.trim()
+      const apiKey = process.env.LIVEKIT_API_KEY?.trim()
+      const apiSecret = process.env.LIVEKIT_API_SECRET?.trim()
+
+      if (!serverUrl || !apiKey || !apiSecret) {
+        return reply.code(200).send({
+          enabled: false,
+          serverUrl: null,
+          token: null,
+        })
+      }
+
+      const displayName = username || userId.replace(/^@/, '').split(':')[0]
+      const at = new AccessToken(apiKey, apiSecret, {
+        identity: userId,
+        name: displayName,
+        metadata: JSON.stringify({ avatarUrl: avatarUrl || null }),
+        ttl: '6h',
+      })
+
+      at.addGrant({
+        roomJoin: true,
+        room: channelId,
+        canPublish: true,
+        canSubscribe: true,
+        canPublishData: true,
+      })
+
+      const token = await at.toJwt()
+      return reply.code(200).send({
+        enabled: true,
+        serverUrl,
+        token,
+        roomName: channelId,
+      })
+    }
+  )
+
+  /**
+   * POST /api/voice/livekit-webhook
+   * Recebe eventos de presença do LiveKit Server para sincronizar a barra lateral das guildas.
+   */
+  app.post('/api/voice/livekit-webhook', async (request, reply) => {
+    const apiKey = process.env.LIVEKIT_API_KEY?.trim()
+    const apiSecret = process.env.LIVEKIT_API_SECRET?.trim()
+    if (!apiKey || !apiSecret) {
+      return reply.code(200).send({ ok: true, ignored: true })
+    }
+
+    try {
+      const receiver = new WebhookReceiver(apiKey, apiSecret)
+      const rawBody = typeof request.body === 'string' ? request.body : JSON.stringify(request.body || {})
+      const event = await receiver.receive(rawBody, request.headers.authorization)
+
+      const channelId = normalizeChannelId(event?.room?.name)
+      const userId = event?.participant?.identity
+
+      if (channelId && userId) {
+        if (event.event === 'participant_left') {
+          const ch = channelVoiceState.get(channelId)
+          if (ch && ch.has(userId)) {
+            const p = ch.get(userId)
+            ch.delete(userId)
+            if (ch.size === 0) channelVoiceState.delete(channelId)
+            broadcastChannelEvent(channelId, 'participant_left', { userId, channelId })
+            if (p?.guildId) broadcastGuildVoiceState(p.guildId)
+          }
+        }
+      }
+      return reply.code(200).send({ ok: true })
+    } catch (err) {
+      request.log.warn({ err }, '[LiveKit Webhook] Assinatura inválida ou payload malformado')
+      return reply.code(401).send({ error: 'Invalid webhook signature' })
+    }
   })
 }
