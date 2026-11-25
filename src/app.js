@@ -93,15 +93,15 @@ const handleHealth = async (request, reply) => {
     dbStatus = 'disconnected'
   }
 
- // Verificar Synapse
- let synapseStatus = "unknown"
- try {
- const synapseUrl = process.env.SYNAPSE_URL || "https://echo.litteris.online"
- const synapseRes = await fetch(`${synapseUrl}/_matrix/client/v3/versions`, { signal: AbortSignal.timeout(3000) })
- synapseStatus = synapseRes.ok ? "ok" : "degraded"
- } catch {
- synapseStatus = "unreachable"
- }
+  // Verificar Synapse (endpoint oficial Matrix: /_matrix/client/versions)
+  let synapseStatus = "unknown"
+  try {
+    const synapseUrl = (process.env.SYNAPSE_URL || "https://echo.litteris.online").replace(/\/$/, '')
+    const synapseRes = await fetch(`${synapseUrl}/_matrix/client/versions`, { signal: AbortSignal.timeout(3000) })
+    synapseStatus = synapseRes.ok ? "connected" : "degraded"
+  } catch {
+    synapseStatus = "unreachable"
+  }
 
   const payload = {
     status: 'ok',
